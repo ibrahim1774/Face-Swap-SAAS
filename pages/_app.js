@@ -3,6 +3,7 @@ import Script from 'next/script';
 import '../styles/globals.css';
 import AppHead from '../components/AppHead';
 import Navbar from '../components/Navbar';
+import Footer from '../components/Footer';
 import MetaPixel from '../components/MetaPixel';
 import ClarityTracker from '../components/ClarityTracker';
 
@@ -15,6 +16,7 @@ export default function App({ Component, pageProps }) {
       <ClarityTracker />
       <Navbar />
       <Component {...pageProps} />
+      <Footer />
     </>
   );
 }

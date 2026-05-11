@@ -6,6 +6,8 @@ import styles from './Navbar.module.css';
 import { getBrowserSupabase } from '../lib/supabase';
 import { subscribeEntitlement } from '../lib/entitlementBus';
 
+const SUPPORT_EMAIL = 'support@davoxa.com';
+
 const FEATURE_TABS = [
   { href: '/', label: 'Face Swap' },
   { href: '/ugc', label: 'UGC Creator' },
@@ -13,6 +15,7 @@ const FEATURE_TABS = [
   { href: '/interior-design', label: 'Interior Design' },
   { href: '/video/editing', label: 'Video Editor' },
   { href: '/history', label: 'History' },
+  { href: `mailto:${SUPPORT_EMAIL}`, label: 'Support', external: true },
 ];
 
 export default function Navbar() {
@@ -104,17 +107,28 @@ export default function Navbar() {
 
         {showTabs && (
           <div className={styles.tabs} role="tablist">
-            {FEATURE_TABS.map((tab) => (
-              <Link
-                key={tab.href}
-                href={tab.href}
-                role="tab"
-                aria-selected={activePath === tab.href}
-                className={`${styles.tab} ${activePath === tab.href ? styles.tabActive : ''}`}
-              >
-                {tab.label}
-              </Link>
-            ))}
+            {FEATURE_TABS.map((tab) =>
+              tab.external ? (
+                <a
+                  key={tab.href}
+                  href={tab.href}
+                  role="tab"
+                  className={styles.tab}
+                >
+                  {tab.label}
+                </a>
+              ) : (
+                <Link
+                  key={tab.href}
+                  href={tab.href}
+                  role="tab"
+                  aria-selected={activePath === tab.href}
+                  className={`${styles.tab} ${activePath === tab.href ? styles.tabActive : ''}`}
+                >
+                  {tab.label}
+                </Link>
+              )
+            )}
           </div>
         )}
 
@@ -245,16 +259,27 @@ export default function Navbar() {
               ◆ {creditLabel}
             </div>
           )}
-          {FEATURE_TABS.map((tab) => (
-            <Link
-              key={tab.href}
-              href={tab.href}
-              className={`${styles.drawerItem} ${activePath === tab.href ? styles.drawerItemActive : ''}`}
-              onClick={() => setDrawerOpen(false)}
-            >
-              {tab.label}
-            </Link>
-          ))}
+          {FEATURE_TABS.map((tab) =>
+            tab.external ? (
+              <a
+                key={tab.href}
+                href={tab.href}
+                className={styles.drawerItem}
+                onClick={() => setDrawerOpen(false)}
+              >
+                {tab.label}
+              </a>
+            ) : (
+              <Link
+                key={tab.href}
+                href={tab.href}
+                className={`${styles.drawerItem} ${activePath === tab.href ? styles.drawerItemActive : ''}`}
+                onClick={() => setDrawerOpen(false)}
+              >
+                {tab.label}
+              </Link>
+            )
+          )}
           <div className={styles.drawerDivider} />
           <Link
             href="/dashboard"
