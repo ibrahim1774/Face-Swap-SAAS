@@ -89,6 +89,24 @@ export default function DashboardPage() {
                 log('warn', 'pixel threw', { message: e.message });
               }
             }
+            // Same event to TikTok Pixel — uses CAPI's eventId so server-
+            // side Events API dedupe (when added) will pair them.
+            if (
+              meta.eventId &&
+              typeof window !== 'undefined' &&
+              window.ttq &&
+              typeof window.ttq.track === 'function'
+            ) {
+              try {
+                window.ttq.track(
+                  meta.eventName || 'Purchase',
+                  { value: meta.value, currency: meta.currency || 'USD' },
+                  { event_id: meta.eventId }
+                );
+              } catch (e) {
+                log('warn', 'tiktok pixel threw', { message: e.message });
+              }
+            }
             // If the checkout was initiated from another page (e.g.
             // /ugc), bounce the user back there now that credits are
             // granted. Brief delay so the Pixel has time to flush.

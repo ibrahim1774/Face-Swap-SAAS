@@ -173,18 +173,19 @@ export default function Paywall({
   // matching meta. Same eventID as the server CAPI call dedupes them.
   const firePixel = (meta) => {
     if (!meta?.eventId) return;
-    if (typeof window === 'undefined' || typeof window.fbq !== 'function') return;
-    try {
-      window.fbq(
-        'track',
-        meta.eventName || 'InitiateCheckout',
-        {
-          value: meta.value,
-          currency: meta.currency || 'USD',
-        },
-        { eventID: meta.eventId }
-      );
-    } catch {}
+    if (typeof window === 'undefined') return;
+    const name = meta.eventName || 'InitiateCheckout';
+    const params = { value: meta.value, currency: meta.currency || 'USD' };
+    if (typeof window.fbq === 'function') {
+      try {
+        window.fbq('track', name, params, { eventID: meta.eventId });
+      } catch {}
+    }
+    if (window.ttq && typeof window.ttq.track === 'function') {
+      try {
+        window.ttq.track(name, params, { event_id: meta.eventId });
+      } catch {}
+    }
   };
 
   const startCheckout = async (plan) => {

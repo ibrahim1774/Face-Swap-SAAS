@@ -4,6 +4,22 @@ import { useRouter } from 'next/router';
 import styles from './AuthModal.module.css';
 import { getBrowserSupabase } from '../lib/supabase';
 
+// Fire the same event to both Meta Pixel and TikTok Pixel, deduping
+// against server-side CAPI/Events-API via the shared eventId.
+function firePixels({ eventName, params, eventId }) {
+  if (!eventId || typeof window === 'undefined') return;
+  if (typeof window.fbq === 'function') {
+    try {
+      window.fbq('track', eventName, params, { eventID: eventId });
+    } catch {}
+  }
+  if (window.ttq && typeof window.ttq.track === 'function') {
+    try {
+      window.ttq.track(eventName, params, { event_id: eventId });
+    } catch {}
+  }
+}
+
 export default function AuthModal({
   open,
   onClose,
@@ -71,20 +87,11 @@ export default function AuthModal({
             const claimData = await r.json().catch(() => ({}));
             if (!r.ok) throw new Error(claimData.error || 'Could not link your subscription.');
             const m = claimData.meta;
-            if (
-              m?.eventId &&
-              typeof window !== 'undefined' &&
-              typeof window.fbq === 'function'
-            ) {
-              try {
-                window.fbq(
-                  'track',
-                  m.eventName || 'Purchase',
-                  { value: m.value, currency: m.currency || 'USD' },
-                  { eventID: m.eventId }
-                );
-              } catch {}
-            }
+            firePixels({
+              eventName: m?.eventName || 'Purchase',
+              params: { value: m?.value, currency: m?.currency || 'USD' },
+              eventId: m?.eventId,
+            });
           } catch (claimErr) {
             setError(
               `Signed in, but linking subscription failed: ${claimErr.message}. Email support@davoxa.com if this persists.`
@@ -95,26 +102,17 @@ export default function AuthModal({
         }
 
         // Record signup IP and fire CompleteRegistration via the
-        // matching browser pixel (the API returns a meta payload with
+        // matching browser pixels (the API returns a meta payload with
         // the event id for dedup).
         fetch('/api/signup-ip', { method: 'POST' })
           .then((r) => r.json().catch(() => ({})))
           .then((data) => {
             const m = data?.meta;
-            if (
-              m?.eventId &&
-              typeof window !== 'undefined' &&
-              typeof window.fbq === 'function'
-            ) {
-              try {
-                window.fbq(
-                  'track',
-                  m.eventName || 'CompleteRegistration',
-                  { method: 'google' },
-                  { eventID: m.eventId }
-                );
-              } catch {}
-            }
+            firePixels({
+              eventName: m?.eventName || 'CompleteRegistration',
+              params: { method: 'google' },
+              eventId: m?.eventId,
+            });
           })
           .catch(() => {});
         if (typeof onClose === 'function') onClose();
@@ -211,20 +209,11 @@ export default function AuthModal({
           if (!r.ok) throw new Error(claimData.error || 'Could not link your subscription.');
           // Fire Purchase pixel with the same eventId as CAPI for dedup.
           const m = claimData.meta;
-          if (
-            m?.eventId &&
-            typeof window !== 'undefined' &&
-            typeof window.fbq === 'function'
-          ) {
-            try {
-              window.fbq(
-                'track',
-                m.eventName || 'Purchase',
-                { value: m.value, currency: m.currency || 'USD' },
-                { eventID: m.eventId }
-              );
-            } catch {}
-          }
+          firePixels({
+            eventName: m?.eventName || 'Purchase',
+            params: { value: m?.value, currency: m?.currency || 'USD' },
+            eventId: m?.eventId,
+          });
         } catch (claimErr) {
           // Account was created; surface the link error so the user
           // can retry or contact support without losing their account.
@@ -237,20 +226,11 @@ export default function AuthModal({
         .then((r) => r.json().catch(() => ({})))
         .then((data) => {
           const m = data?.meta;
-          if (
-            m?.eventId &&
-            typeof window !== 'undefined' &&
-            typeof window.fbq === 'function'
-          ) {
-            try {
-              window.fbq(
-                'track',
-                m.eventName || 'CompleteRegistration',
-                { method: mode === 'signup' ? 'email' : 'email-signin' },
-                { eventID: m.eventId }
-              );
-            } catch {}
-          }
+          firePixels({
+            eventName: m?.eventName || 'CompleteRegistration',
+            params: { method: mode === 'signup' ? 'email' : 'email-signin' },
+            eventId: m?.eventId,
+          });
         })
         .catch(() => {});
       if (typeof onClose === 'function') onClose();
