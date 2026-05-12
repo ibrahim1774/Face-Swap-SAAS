@@ -607,14 +607,18 @@ export default function InteriorDesignPage() {
             <div className={styles.productGrid}>
               {products.map((p) => {
                 const q = encodeURIComponent(p);
+                const amazonTag = process.env.NEXT_PUBLIC_AMAZON_AFFILIATE_TAG;
+                const amazonHref = amazonTag
+                  ? `https://www.amazon.com/s?k=${q}&tag=${encodeURIComponent(amazonTag)}`
+                  : `https://www.amazon.com/s?k=${q}`;
                 return (
                   <div key={p} className={styles.productCard}>
                     <span className={styles.productName}>{p}</span>
                     <div className={styles.productLinks}>
                       <a
-                        href={`https://www.amazon.com/s?k=${q}`}
+                        href={amazonHref}
                         target="_blank"
-                        rel="noopener noreferrer"
+                        rel="noopener sponsored"
                         className={`${styles.productLink} ${styles.productLinkAmazon}`}
                       >
                         Amazon
@@ -632,6 +636,19 @@ export default function InteriorDesignPage() {
                 );
               })}
             </div>
+            {process.env.NEXT_PUBLIC_AMAZON_AFFILIATE_TAG && (
+              <p
+                style={{
+                  marginTop: 10,
+                  fontSize: 11,
+                  color: 'rgba(255,255,255,0.5)',
+                  textAlign: 'center',
+                  lineHeight: 1.5,
+                }}
+              >
+                As an Amazon Associate we earn from qualifying purchases.
+              </p>
+            )}
 
             {credits && typeof credits.imageCreditsRemaining === 'number' && (
               <div className={styles.usage}>
