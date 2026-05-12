@@ -7,7 +7,15 @@ import { useRouter } from 'next/router';
  * funnel events" when ViewContent is absent — this completes the
  * funnel (PageView → ViewContent → AddToCart → InitiateCheckout →
  * Purchase).
+ *
+ * Includes a `contents` array with a `content_id` derived from the
+ * path so TikTok's "Content ID is missing" diagnostic stays clear.
  */
+function pageContentId(path) {
+  if (!path || path === '/') return 'face-swap';
+  return path.replace(/^\/+/, '').replace(/\/$/, '') || 'face-swap';
+}
+
 export default function TikTokRouteEvents() {
   const router = useRouter();
   useEffect(() => {
@@ -15,8 +23,14 @@ export default function TikTokRouteEvents() {
 
     const fire = (path) => {
       if (!window.ttq || typeof window.ttq.track !== 'function') return;
+      const id = pageContentId(path);
       try {
-        window.ttq.track('ViewContent', { content_name: path });
+        window.ttq.track('ViewContent', {
+          contents: [
+            { content_id: id, content_type: 'product', content_name: id },
+          ],
+          content_type: 'product',
+        });
       } catch {}
     };
 

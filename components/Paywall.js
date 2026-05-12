@@ -171,14 +171,25 @@ export default function Paywall({
 
   // Fire the browser pixel for InitiateCheckout if the API returned
   // matching meta. Same eventID as the server CAPI call dedupes them.
-  const firePixel = (meta) => {
+  // `content` lets the caller pass a TikTok content_id + content_name
+  // so TikTok's "Content ID is missing" diagnostic stays clear.
+  const firePixel = (meta, content) => {
     if (!meta?.eventId) return;
     if (typeof window === 'undefined') return;
     const name = meta.eventName || 'InitiateCheckout';
-    const params = { value: meta.value, currency: meta.currency || 'USD' };
+    const baseParams = { value: meta.value, currency: meta.currency || 'USD' };
+    const id = content?.content_id || 'subscription';
+    const displayName = content?.content_name || id;
+    const ttParams = {
+      ...baseParams,
+      contents: [
+        { content_id: id, content_type: 'product', content_name: displayName },
+      ],
+      content_type: 'product',
+    };
     if (typeof window.fbq === 'function') {
       try {
-        window.fbq('track', name, params, { eventID: meta.eventId });
+        window.fbq('track', name, baseParams, { eventID: meta.eventId });
       } catch {}
     }
     if (window.ttq && typeof window.ttq.track === 'function') {
@@ -187,8 +198,8 @@ export default function Paywall({
         // here at click-time with the same eventId — TikTok dedupes
         // per (event_name, event_id) so distinct names with the same
         // id co-exist.
-        window.ttq.track('AddToCart', params, { event_id: meta.eventId });
-        window.ttq.track(name, params, { event_id: meta.eventId });
+        window.ttq.track('AddToCart', ttParams, { event_id: meta.eventId });
+        window.ttq.track(name, ttParams, { event_id: meta.eventId });
       } catch {}
     }
   };
@@ -207,7 +218,10 @@ export default function Paywall({
       if (!res.ok || !data.url) {
         throw new Error(data.error || 'Could not start checkout.');
       }
-      firePixel(data.meta);
+      firePixel(data.meta, {
+        content_id: `plan-${plan}`,
+        content_name: `${plan} subscription`,
+      });
       if (data.trialBlocked) {
         setTrialBlocked(true);
         // Delay the redirect so the user sees the note before Stripe loads.

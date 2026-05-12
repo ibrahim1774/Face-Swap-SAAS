@@ -5,8 +5,11 @@ import styles from './AuthModal.module.css';
 import { getBrowserSupabase } from '../lib/supabase';
 
 // Fire the same event to both Meta Pixel and TikTok Pixel, deduping
-// against server-side CAPI/Events-API via the shared eventId.
-function firePixels({ eventName, params, eventId }) {
+// against server-side CAPI/Events-API via the shared eventId. TikTok
+// requires a content_id on every event for shop-catalog correlation;
+// caller passes content.{content_id, content_name} so TikTok's
+// "Content ID is missing" diagnostic stays clear.
+function firePixels({ eventName, params, eventId, content }) {
   if (!eventId || typeof window === 'undefined') return;
   if (typeof window.fbq === 'function') {
     try {
@@ -15,7 +18,19 @@ function firePixels({ eventName, params, eventId }) {
   }
   if (window.ttq && typeof window.ttq.track === 'function') {
     try {
-      window.ttq.track(eventName, params, { event_id: eventId });
+      const id = content?.content_id || 'auth';
+      const displayName = content?.content_name || id;
+      window.ttq.track(
+        eventName,
+        {
+          ...params,
+          contents: [
+            { content_id: id, content_type: 'product', content_name: displayName },
+          ],
+          content_type: 'product',
+        },
+        { event_id: eventId }
+      );
     } catch {}
   }
 }
@@ -91,6 +106,7 @@ export default function AuthModal({
               eventName: m?.eventName || 'Purchase',
               params: { value: m?.value, currency: m?.currency || 'USD' },
               eventId: m?.eventId,
+              content: { content_id: 'subscription', content_name: 'subscription' },
             });
           } catch (claimErr) {
             setError(
@@ -112,6 +128,7 @@ export default function AuthModal({
               eventName: m?.eventName || 'CompleteRegistration',
               params: { method: 'google' },
               eventId: m?.eventId,
+              content: { content_id: 'signup-google', content_name: 'google signup' },
             });
           })
           .catch(() => {});
@@ -213,6 +230,7 @@ export default function AuthModal({
             eventName: m?.eventName || 'Purchase',
             params: { value: m?.value, currency: m?.currency || 'USD' },
             eventId: m?.eventId,
+            content: { content_id: 'subscription', content_name: 'subscription' },
           });
         } catch (claimErr) {
           // Account was created; surface the link error so the user
@@ -226,10 +244,12 @@ export default function AuthModal({
         .then((r) => r.json().catch(() => ({})))
         .then((data) => {
           const m = data?.meta;
+          const cid = mode === 'signup' ? 'signup-email' : 'signin-email';
           firePixels({
             eventName: m?.eventName || 'CompleteRegistration',
             params: { method: mode === 'signup' ? 'email' : 'email-signin' },
             eventId: m?.eventId,
+            content: { content_id: cid, content_name: cid },
           });
         })
         .catch(() => {});

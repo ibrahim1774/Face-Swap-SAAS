@@ -91,6 +91,8 @@ export default function DashboardPage() {
             }
             // Same event to TikTok Pixel — uses CAPI's eventId so server-
             // side Events API dedupe (when added) will pair them.
+            // contents.content_id keeps TikTok's "Content ID missing"
+            // diagnostic clear.
             if (
               meta.eventId &&
               typeof window !== 'undefined' &&
@@ -98,9 +100,17 @@ export default function DashboardPage() {
               typeof window.ttq.track === 'function'
             ) {
               try {
+                const contentId = data.kind === 'topup' ? 'topup' : 'subscription';
                 window.ttq.track(
                   meta.eventName || 'Purchase',
-                  { value: meta.value, currency: meta.currency || 'USD' },
+                  {
+                    value: meta.value,
+                    currency: meta.currency || 'USD',
+                    contents: [
+                      { content_id: contentId, content_type: 'product', content_name: contentId },
+                    ],
+                    content_type: 'product',
+                  },
                   { event_id: meta.eventId }
                 );
               } catch (e) {
