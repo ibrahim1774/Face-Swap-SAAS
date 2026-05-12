@@ -6,6 +6,7 @@ import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 import MetaPixel from '../components/MetaPixel';
 import TikTokPixel from '../components/TikTokPixel';
+import TikTokRouteEvents from '../components/TikTokRouteEvents';
 import ClarityTracker from '../components/ClarityTracker';
 
 export default function App({ Component, pageProps }) {
@@ -15,6 +16,7 @@ export default function App({ Component, pageProps }) {
       <Script src="https://accounts.google.com/gsi/client" strategy="afterInteractive" />
       <MetaPixel />
       <TikTokPixel />
+      <TikTokRouteEvents />
       <ClarityTracker />
       <Navbar />
       <Component {...pageProps} />

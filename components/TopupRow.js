@@ -52,6 +52,11 @@ function firePixel(meta) {
   }
   if (window.ttq && typeof window.ttq.track === 'function') {
     try {
+      // TikTok funnel: AddToCart precedes InitiateCheckout. Fire both
+      // here at click-time with the same eventId — TikTok dedupes
+      // per (event_name, event_id) so distinct names with the same
+      // id co-exist.
+      window.ttq.track('AddToCart', params, { event_id: meta.eventId });
       window.ttq.track(name, params, { event_id: meta.eventId });
     } catch {}
   }
