@@ -10,30 +10,24 @@ import { sendCapiEvent } from '../../lib/meta';
 import { linkStripeCustomerToProfile } from '../../lib/entitlement';
 
 /*
- * Resolve (or create exactly once) the Stripe customer for a given
- * Supabase user. Three lookups before falling back to create:
+ * Find an existing Stripe customer for this Supabase user. Returns
+ * the customer id, or null if none found. Never creates.
  *
+ * Three lookups, in order:
  *   1. profiles.stripe_customer_id (authoritative link). If the
  *      stored ID exists in Stripe and isn't deleted, reuse it.
- *   2. Stripe Customer Search by metadata.supabase_user_id. Catches
- *      cases where /confirm or the webhook stamped the metadata but
- *      the profile row never got written (e.g. RLS hiccup).
- *   3. Stripe customers.list by email. Picks the customer whose
- *      metadata.supabase_user_id matches (or an unowned one), so we
- *      adopt — not duplicate — any pre-existing email match.
+ *   2. Stripe Customer Search by metadata.supabase_user_id.
+ *   3. Stripe customers.list by email — adopt the best-fit match
+ *      (prefer one whose metadata already names this user).
  *
- * Only step 4 (create) is reached when none of the above produce a
- * customer. We always re-stamp the supabase_user_id metadata and
- * upsert profile.stripe_customer_id, so subsequent calls converge
- * on the same customer.
+ * Customer creation is deferred entirely to Stripe Checkout's
+ * payment-completion flow. We never call customers.create on click.
  *
- * Previously each top-up click could fall through to step 4 if the
- * profile upsert silently failed; the subscription path could
- * always produce a new customer because it passed only
- * customer_email to Stripe Checkout (which creates a new customer
- * per session in subscription mode).
+ * If a match is found, we idempotently stamp supabase_user_id on
+ * its metadata and upsert profile.stripe_customer_id so subsequent
+ * calls converge on the same customer.
  */
-async function resolveStripeCustomerForUser({ admin, userId, email }) {
+async function findStripeCustomerForUser({ admin, userId, email }) {
   let customerId = null;
 
   // 1) Profile lookup + Stripe existence check
@@ -49,13 +43,13 @@ async function resolveStripeCustomerForUser({ admin, userId, email }) {
         if (c && !c.deleted) customerId = c.id;
       } catch (retrieveErr) {
         console.warn(
-          '[customer-resolve] linked customer not in Stripe, will re-resolve',
+          '[customer-find] linked customer not in Stripe, will re-resolve',
           retrieveErr.message
         );
       }
     }
   } catch (lookupErr) {
-    console.warn('[customer-resolve] profile lookup failed', lookupErr.message);
+    console.warn('[customer-find] profile lookup failed', lookupErr.message);
   }
 
   // 2) Stripe Customer Search by metadata.supabase_user_id
@@ -67,7 +61,7 @@ async function resolveStripeCustomerForUser({ admin, userId, email }) {
       });
       if (search.data.length > 0) customerId = search.data[0].id;
     } catch (searchErr) {
-      console.warn('[customer-resolve] metadata search failed', searchErr.message);
+      console.warn('[customer-find] metadata search failed', searchErr.message);
     }
   }
 
@@ -84,19 +78,11 @@ async function resolveStripeCustomerForUser({ admin, userId, email }) {
         customerId = chosen.id;
       }
     } catch (listErr) {
-      console.warn('[customer-resolve] email list failed', listErr.message);
+      console.warn('[customer-find] email list failed', listErr.message);
     }
   }
 
-  // 4) Create a fresh customer (only when no existing match)
-  if (!customerId) {
-    console.log('[customer-resolve] creating new Stripe customer for', userId, email || '(no email)');
-    const created = await stripe().customers.create({
-      email: email || undefined,
-      metadata: { supabase_user_id: userId },
-    });
-    customerId = created.id;
-  }
+  if (!customerId) return null;
 
   // Idempotently stamp supabase_user_id on the customer's metadata.
   try {
@@ -108,17 +94,15 @@ async function resolveStripeCustomerForUser({ admin, userId, email }) {
       });
     }
   } catch (mdErr) {
-    console.warn('[customer-resolve] metadata sync failed', mdErr.message);
+    console.warn('[customer-find] metadata sync failed', mdErr.message);
   }
 
-  // Authoritative link in our profiles table. Failure throws here
-  // intentionally — if we can't persist the link, future calls will
-  // re-resolve via Stripe search/email and converge anyway.
+  // Authoritative link in our profiles table.
   try {
     await linkStripeCustomerToProfile(admin, userId, customerId);
   } catch (linkErr) {
     console.warn(
-      '[customer-resolve] profile link failed — search/email fallback will still find this customer next time',
+      '[customer-find] profile link failed — search/email fallback will still find this customer next time',
       linkErr.message
     );
   }
@@ -166,13 +150,13 @@ export default async function handler(req, res) {
       }
       const price = await getOrCreateTopupPrice(pack);
 
-      // Resolve (or first-time create) a single Stripe customer for
-      // this Supabase user. Reuses an existing customer when one
-      // exists in any of: profile link, metadata search, email
-      // match — so a customer who already subscribed via a different
-      // path doesn't get a duplicate created here.
+      // Find an existing Stripe customer (never create on click).
+      // If none exists, Stripe Checkout creates one at payment
+      // completion via customer_creation: 'always' — we need a
+      // customer attached so the credit ledger (stored in customer
+      // metadata) has somewhere to land.
       const admin = getSupabaseAdmin();
-      const customerId = await resolveStripeCustomerForUser({
+      const customerId = await findStripeCustomerForUser({
         admin,
         userId: session.user.id,
         email,
@@ -182,7 +166,9 @@ export default async function handler(req, res) {
         mode: 'payment',
         payment_method_types: ['card'],
         line_items: [{ price: price.id, quantity: 1 }],
-        customer: customerId,
+        ...(customerId
+          ? { customer: customerId }
+          : { customer_creation: 'always' }),
         success_url: `${origin}/dashboard?paid=1&session_id={CHECKOUT_SESSION_ID}${returnQuery}`,
         cancel_url: `${origin}/dashboard?paid=0`,
         allow_promotion_codes: true,
@@ -238,16 +224,20 @@ export default async function handler(req, res) {
     const safeSurface = ALLOWED_SURFACES.has(surface) ? surface : 'default';
     const price = await getOrCreatePrice(plan, safeSurface);
 
-    // For authed users, resolve (or first-time create) a single
-    // Stripe customer and pass `customer: customerId`. Stripe
-    // Checkout in subscription mode creates a NEW customer every
-    // time when you pass `customer_email` instead — that's how
-    // duplicates were piling up. Anonymous flow still falls back
-    // to `customer_email` since we have no Supabase user yet.
+    // For authed users, look up (never create) an existing Stripe
+    // customer. If one is found we pass `customer: customerId` so
+    // Stripe reuses it. If not, we omit both `customer` and
+    // `customer_email` — Stripe Checkout collects the email on its
+    // own page and creates the Customer only at payment completion.
+    // Anonymous flow does the same (no Supabase user yet to look
+    // up). Trade-off: first-time subscribers type their email at
+    // Stripe's page instead of having it prefilled, in exchange
+    // for not littering Stripe with customers from abandoned
+    // checkouts.
     let subCustomerId = null;
     if (!isAnon) {
       const admin = getSupabaseAdmin();
-      subCustomerId = await resolveStripeCustomerForUser({
+      subCustomerId = await findStripeCustomerForUser({
         admin,
         userId: session.user.id,
         email,
@@ -258,11 +248,7 @@ export default async function handler(req, res) {
       mode: 'subscription',
       payment_method_types: ['card'],
       line_items: [{ price: price.id, quantity: 1 }],
-      ...(subCustomerId
-        ? { customer: subCustomerId }
-        : email
-          ? { customer_email: email }
-          : {}),
+      ...(subCustomerId ? { customer: subCustomerId } : {}),
       success_url: `${origin}${successPath}`,
       cancel_url: `${origin}${isAnon ? '/' : '/dashboard?paid=0'}`,
       allow_promotion_codes: true,
