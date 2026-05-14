@@ -605,15 +605,20 @@ export default function InteriorDesignPage() {
               </p>
             </div>
             <div className={styles.productGrid}>
-              {products.map((p) => {
-                const q = encodeURIComponent(p);
+              {products.map((p, i) => {
+                // API now returns { name, query } objects keyed to the
+                // generated image. Static fallback list is still plain
+                // strings — handle both shapes.
+                const name = typeof p === 'string' ? p : p.name;
+                const query = typeof p === 'string' ? p : p.query || p.name;
+                const q = encodeURIComponent(query);
                 const amazonTag = process.env.NEXT_PUBLIC_AMAZON_AFFILIATE_TAG;
                 const amazonHref = amazonTag
                   ? `https://www.amazon.com/s?k=${q}&tag=${encodeURIComponent(amazonTag)}`
                   : `https://www.amazon.com/s?k=${q}`;
                 return (
-                  <div key={p} className={styles.productCard}>
-                    <span className={styles.productName}>{p}</span>
+                  <div key={`${name}-${i}`} className={styles.productCard}>
+                    <span className={styles.productName}>{name}</span>
                     <div className={styles.productLinks}>
                       <a
                         href={amazonHref}

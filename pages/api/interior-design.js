@@ -1,4 +1,5 @@
 import { put } from '@vercel/blob';
+import Anthropic from '@anthropic-ai/sdk';
 
 import { getUserFromRequest, getSupabaseAdmin } from '../../lib/supabaseServer';
 import { stripe } from '../../lib/stripe';
@@ -151,6 +152,17 @@ const STYLE_PRODUCTS = {
     'gallery wall frame set',
     'emerald throw blanket',
   ],
+};
+
+const STYLE_NAMES = {
+  'modern-minimalist': 'Modern Minimalist',
+  scandinavian: 'Scandinavian',
+  'industrial-loft': 'Industrial Loft',
+  bohemian: 'Bohemian',
+  'mid-century-modern': 'Mid-Century Modern',
+  japandi: 'Japandi',
+  coastal: 'Coastal',
+  'dark-moody': 'Dark Moody',
 };
 
 const KEEP_FURNITURE_PROMPTS = {
@@ -441,15 +453,100 @@ export default async function handler(req, res) {
       },
     }).catch(() => {});
 
+    // Use Claude vision to extract 8 specific shoppable items actually
+    // visible in the generated room (color/material/shape detail).
+    // Falls back to STYLE_PRODUCTS keywords if vision is unavailable
+    // or returns malformed output.
+    const fallback = (STYLE_PRODUCTS[style] || []).map((s) => ({ name: s, query: s }));
+    const visionProducts = await extractProductsFromImage({
+      imageUrl: storedUrl,
+      styleName: STYLE_NAMES[style] || style,
+    });
+
     return res.status(200).json({
       renderedImageUrl: storedUrl,
-      products: STYLE_PRODUCTS[style] || [],
+      products: visionProducts && visionProducts.length > 0 ? visionProducts : fallback,
       imageCreditsRemaining: isAdmin ? 9999 : imageCredits,
     });
   } catch (err) {
     console.error('[interior-design] failed', err);
     if (creditReserved) await refundCredit({ customerId, isAdmin, md: entitlement.md, nextPeriodStart: entitlement.nextPeriodStart });
     return res.status(500).json({ error: err.message || 'Generation failed.' });
+  }
+}
+
+// Use Claude vision to extract specific shoppable items from the
+// rendered room. Returns up to 8 items shaped { name, query } where
+// `query` is a 5-10 word Amazon search string carrying color, material,
+// shape, and style cues so the affiliate links land on products that
+// actually resemble what's in the image. Returns null on any failure
+// (missing key, parse error, timeout) — the caller falls back to the
+// style's generic product list.
+async function extractProductsFromImage({ imageUrl, styleName }) {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return null;
+
+  const prompt = `Look at this ${styleName} interior design photo. Identify EXACTLY 8 distinct furniture and decor items that are clearly visible and that a viewer could realistically buy.
+
+For each item, return:
+- "name": a short human-readable label (3-6 words) describing the item with its most defining trait — e.g. "Round walnut coffee table" or "Cream boucle accent chair".
+- "query": Amazon search keywords (5-10 words) that would return products closely matching the item. Include color, material, shape, and ${styleName} style cues. Do not include brand names or sizes. Examples:
+    - "round walnut wood mid-century coffee table hairpin legs"
+    - "cream boucle barrel accent chair curved"
+    - "matte black arc floor lamp marble base"
+
+Cover a variety of categories — seating, tables, lighting, rugs, textiles, wall art, storage, planters — based on what is actually visible. Avoid duplicates.
+
+Return ONLY a valid JSON object in this exact shape, no prose, no code fences:
+{ "products": [ { "name": "...", "query": "..." }, ... ] }`;
+
+  try {
+    const anthropic = new Anthropic({ apiKey });
+    const result = await Promise.race([
+      anthropic.messages.create({
+        model: 'claude-sonnet-4-5',
+        max_tokens: 1200,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'image', source: { type: 'url', url: imageUrl } },
+              { type: 'text', text: prompt },
+            ],
+          },
+        ],
+      }),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('vision-timeout')), 15000)
+      ),
+    ]);
+    const block = result.content.find((b) => b.type === 'text');
+    const raw = block ? block.text : '';
+    const cleaned = raw
+      .trim()
+      .replace(/^```(?:json)?\s*/i, '')
+      .replace(/```\s*$/, '')
+      .trim();
+    const parsed = JSON.parse(cleaned);
+    if (!Array.isArray(parsed?.products)) return null;
+    const cleaned2 = parsed.products
+      .filter(
+        (p) =>
+          p &&
+          typeof p.name === 'string' &&
+          typeof p.query === 'string' &&
+          p.name.length > 0 &&
+          p.query.length > 0
+      )
+      .map((p) => ({
+        name: p.name.slice(0, 80),
+        query: p.query.slice(0, 120),
+      }))
+      .slice(0, 8);
+    return cleaned2.length > 0 ? cleaned2 : null;
+  } catch (err) {
+    console.warn('[interior-design] vision product extraction failed', err.message);
+    return null;
   }
 }
 
