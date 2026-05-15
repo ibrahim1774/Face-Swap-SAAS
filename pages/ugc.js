@@ -987,15 +987,22 @@ export default function UgcPage() {
     entitlement?.status === 'trialing';
   return (
     <>
-      <Head><title>From a Single Image to a Full Video — Haelabs</title></Head>
+      <Head><title>Turn your photo into a video — Haelabs</title></Head>
       <main className={styles.page} style={{ paddingTop: 8 }}>
         <div className={styles.hero} style={{ marginBottom: 6 }}>
           <h1
             className={styles.headline}
             style={{ fontSize: 'clamp(18px, 2.6vw, 26px)', margin: '4px 0', lineHeight: 1.2 }}
           >
-            Turn Your Image Into a Talking, Moving Video
+            Turn your photo into a video?
           </h1>
+          <p
+            className={styles.subtitle}
+            style={{ fontSize: 'clamp(13px, 1.6vw, 15px)', margin: '6px auto 0', maxWidth: 620, lineHeight: 1.45 }}
+          >
+            Have your photo turn into a funny video, a roast, a marketing
+            promo — just make it come alive.
+          </p>
         </div>
 
         <form onSubmit={handleAnimate} className={styles.ugcCard}>
