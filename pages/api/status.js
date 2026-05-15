@@ -54,7 +54,10 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'predictionId is required.' });
   }
 
-  const isKie = vendor === 'kie';
+  // Accept legacy 'kie' and the new namespaced 'kie-kling' / 'kie-seedance'
+  // vendor strings (the ported ugc-animate uses the namespaced shape so
+  // future model dispatches can be distinguished in logs).
+  const isKie = typeof vendor === 'string' && vendor.startsWith('kie');
   const session = await getUserFromRequest(req, res); // /api/status is gated by middleware so this is non-null
 
   // Idempotently settle the credit reservation we made when the job

@@ -4,33 +4,43 @@ import styles from './Paywall.module.css';
 import TopupRow from './TopupRow';
 
 // Cosmetic credit-display multiplier for image-credit surfaces.
-// Internally 1 image = 1 credit (Stripe metadata, /api/glow-up,
-// /api/interior-design); on image-feature paywalls we display the
-// number multiplied by this so plans / packs feel more substantial.
-// The info icon next to the inflated number always reveals the real
-// image count.
 const IMAGE_DISPLAY_MULTIPLIER = 10;
-
-// Image-credit allowance per period. Keep in sync with
-// CREDITS_PER_PERIOD in /api/glow-up.js and /api/interior-design.js.
 const IMAGE_PERIOD_CAP = 30;
+
+// Video credit caps mirror lib/stripe.js PLANS.{plan}.cap. Base-quality
+// short video = 4s × 10cr/s = 40cr (480p silent at the Standard rate).
+const PLAN_VIDEO_CAPS = {
+  monthly: 760,
+  pro: 2280,
+  yearly: 3840,
+};
+const CREDITS_PER_BASE_VIDEO = 40;
 
 const SURFACE_COPY = {
   video: {
     monthlyName: 'Monthly',
+    proName: 'Pro',
     yearlyName: 'Yearly',
     pickHeader: 'Pick a plan',
     pickSubtitle: 'Pick a plan to get started. Cancel anytime.',
     monthlyFeats: [
       'Full access to AI Video generation',
-      'Includes credits to start creating immediately',
+      { videoCredits: true, plan: 'monthly' },
       'Top up anytime for more credits',
       'Cancel anytime',
     ],
-    yearlyFeats: [
-      { strong: 'Save 50%', after: ' vs paying monthly ($60/yr)' },
+    proFeats: [
+      { strong: '3× the credits', after: ' of monthly' },
       'Full access to AI Video generation',
-      'Includes credits to start creating immediately',
+      { videoCredits: true, plan: 'pro' },
+      'Top up anytime',
+      'Cancel anytime',
+    ],
+    yearlyFeats: [
+      { strong: 'Best value', after: ' — biggest credit pool' },
+      'Full access to AI Video generation',
+      { videoCredits: true, plan: 'yearly' },
+      'Top up anytime for more credits',
       'One charge, cancel anytime',
     ],
     bonusLine: 'Access to AI Face Swap included',
@@ -38,19 +48,27 @@ const SURFACE_COPY = {
   },
   'glow-up': {
     monthlyName: 'Glow Up Monthly Plan',
+    proName: 'Glow Up Pro Plan',
     yearlyName: 'Glow Up Yearly Plan',
     pickHeader: 'Pick a Glow Up plan',
     pickSubtitle: 'Premium AI portraits, every month. Cancel anytime.',
     monthlyFeats: [
       'Access to Glow Up AI portraits',
-      { credits: true }, // injected with inflated count + info icon
+      { credits: true },
       'All 4 styles: Professional, Casual, Glow Up, SOAR',
       'Customize each shot with your own prompt + edit any result',
       'Top up anytime',
       'Cancel anytime',
     ],
+    proFeats: [
+      { strong: '3× the credits', after: ' of monthly' },
+      'Access to Glow Up AI portraits',
+      { credits: true },
+      'Customize each shot with your own prompt + edit any result',
+      'Top up anytime',
+    ],
     yearlyFeats: [
-      { strong: 'Save 50%', after: ' vs paying monthly ($60/yr)' },
+      { strong: 'Best value', after: ' — biggest credit pool' },
       'Access to Glow Up AI portraits',
       { credits: true },
       'Customize each shot with your own prompt + edit any result',
@@ -62,10 +80,10 @@ const SURFACE_COPY = {
   },
   'interior-design': {
     monthlyName: 'AI Interior Monthly Plan',
+    proName: 'AI Interior Pro Plan',
     yearlyName: 'AI Interior Yearly Plan',
     pickHeader: 'Pick an AI Interior plan',
-    pickSubtitle:
-      'Photorealistic room redesigns, every month. Cancel anytime.',
+    pickSubtitle: 'Photorealistic room redesigns, every month. Cancel anytime.',
     monthlyFeats: [
       'Access to AI Interior Design',
       { credits: true },
@@ -73,8 +91,14 @@ const SURFACE_COPY = {
       'Customize each design',
       'Cancel anytime',
     ],
+    proFeats: [
+      { strong: '3× the credits', after: ' of monthly' },
+      'Access to AI Interior Design',
+      { credits: true },
+      'Customize each design',
+    ],
     yearlyFeats: [
-      { strong: 'Save 50%', after: ' vs paying monthly ($60/yr)' },
+      { strong: 'Best value', after: ' — biggest credit pool' },
       'Access to AI Interior Design',
       { credits: true },
       'Customize each design',
@@ -86,7 +110,7 @@ const SURFACE_COPY = {
   },
 };
 
-function CreditsLine({ multiplier, cap, noun, infoOpen, setInfoOpen }) {
+function ImageCreditsLine({ multiplier, cap, noun, infoOpen, setInfoOpen }) {
   const inflated = cap * multiplier;
   return (
     <>
@@ -109,6 +133,30 @@ function CreditsLine({ multiplier, cap, noun, infoOpen, setInfoOpen }) {
   );
 }
 
+function VideoCreditsLine({ plan, infoOpen, setInfoOpen }) {
+  const cap = PLAN_VIDEO_CAPS[plan] || 0;
+  const videosAtBase = Math.floor(cap / CREDITS_PER_BASE_VIDEO);
+  return (
+    <>
+      <strong>{cap.toLocaleString()} video credits</strong> per period
+      {' '}
+      <button
+        type="button"
+        className={styles.infoBtn}
+        aria-label={`approximately ${videosAtBase} short videos at the base level`}
+        onClick={() => setInfoOpen((v) => !v)}
+      >
+        ⓘ
+      </button>
+      {infoOpen && (
+        <span className={styles.infoTip}>
+          <strong>~{videosAtBase} short videos</strong> at the base level. Higher quality (longer, HD, with audio) costs more credits.
+        </span>
+      )}
+    </>
+  );
+}
+
 function Feat({ entry, copy, infoOpen, setInfoOpen }) {
   if (typeof entry === 'string') return <li>{entry}</li>;
   if (entry && entry.strong) {
@@ -122,7 +170,7 @@ function Feat({ entry, copy, infoOpen, setInfoOpen }) {
   if (entry && entry.credits) {
     return (
       <li>
-        <CreditsLine
+        <ImageCreditsLine
           multiplier={IMAGE_DISPLAY_MULTIPLIER}
           cap={IMAGE_PERIOD_CAP}
           noun={copy.imageNoun || 'images'}
@@ -132,7 +180,86 @@ function Feat({ entry, copy, infoOpen, setInfoOpen }) {
       </li>
     );
   }
+  if (entry && entry.videoCredits) {
+    return (
+      <li>
+        <VideoCreditsLine
+          plan={entry.plan}
+          infoOpen={infoOpen}
+          setInfoOpen={setInfoOpen}
+        />
+      </li>
+    );
+  }
   return null;
+}
+
+function PlanCard({
+  planKey,
+  name,
+  price,
+  period,
+  feats,
+  bonusLine,
+  bonusHighlight,
+  copy,
+  infoOpen,
+  setInfoOpen,
+  busy,
+  onSubscribe,
+  isTrialing,
+  featured,
+  badge,
+  btnClass,
+  ctaPrefix,
+}) {
+  return (
+    <article className={`${styles.tier} ${featured ? styles.tierFeatured : ''}`}>
+      {badge && <div className={styles.tierBadge}>{badge}</div>}
+      <div className={styles.tierHead}>
+        <h3 className={styles.tierName}>{name}</h3>
+        <div className={styles.price}>
+          <span className={styles.amount}>${price}</span>
+          <span className={styles.period}>/ {period}</span>
+        </div>
+      </div>
+      {bonusHighlight && (
+        <div className={styles.bonusBanner}>
+          <div className={styles.bonusBannerHeadline}>
+            +{bonusHighlight.extra.toLocaleString()} bonus credits
+          </div>
+          <div className={styles.bonusBannerSub}>{bonusHighlight.sub}</div>
+        </div>
+      )}
+      <ul className={styles.feats}>
+        {feats.map((entry, i) => (
+          <Feat
+            key={i}
+            entry={entry}
+            copy={copy}
+            infoOpen={infoOpen}
+            setInfoOpen={setInfoOpen}
+          />
+        ))}
+        {bonusLine && (
+          <li className={styles.featBonus}>
+            <span className={styles.bonusTag}>Bonus</span>
+            {bonusLine}
+          </li>
+        )}
+      </ul>
+      <button
+        type="button"
+        className={`${styles.btn} ${btnClass}`}
+        onClick={() => onSubscribe(planKey)}
+        disabled={busy !== null}
+      >
+        {busy === planKey
+          ? 'Redirecting…'
+          : `${ctaPrefix} → $${price}/${period === 'year' ? 'yr' : 'mo'}`}
+      </button>
+    </article>
+  );
 }
 
 export default function Paywall({
@@ -142,20 +269,15 @@ export default function Paywall({
   returnTo,
   surface = 'video',
 }) {
-  const [busy, setBusy] = useState(null); // 'monthly' | 'yearly' | 's' | 'm' | 'l'
+  const [busy, setBusy] = useState(null);
   const [localError, setLocalError] = useState('');
   const [trialBlocked, setTrialBlocked] = useState(false);
   const [infoOpenMonthly, setInfoOpenMonthly] = useState(false);
+  const [infoOpenPro, setInfoOpenPro] = useState(false);
   const [infoOpenYearly, setInfoOpenYearly] = useState(false);
 
   const copy = SURFACE_COPY[surface] || SURFACE_COPY.video;
 
-  // After redirecting to Stripe, the user may hit Back to return here.
-  // Modern browsers restore the page from BFCache without re-running
-  // useEffect or remounting, so the `busy` state stays set and the
-  // button keeps saying "Redirecting…". The pageshow event fires on
-  // BFCache restore (event.persisted === true) — we use it to reset
-  // the transient state to its initial values.
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
     const onPageShow = (e) => {
@@ -169,14 +291,11 @@ export default function Paywall({
     return () => window.removeEventListener('pageshow', onPageShow);
   }, []);
 
-  // Fire the browser pixel for InitiateCheckout if the API returned
-  // matching meta. Same eventID as the server CAPI call dedupes them.
   // `content` lets the caller pass a TikTok content_id + content_name
   // so TikTok's "Content ID is missing" diagnostic stays clear.
   const firePixel = (meta, content) => {
     if (!meta?.eventId) return;
     if (typeof window === 'undefined') return;
-    const name = meta.eventName || 'InitiateCheckout';
     const baseParams = { value: meta.value, currency: meta.currency || 'USD' };
     const id = content?.content_id || 'subscription';
     const displayName = content?.content_name || id;
@@ -189,7 +308,12 @@ export default function Paywall({
     };
     if (typeof window.fbq === 'function') {
       try {
-        window.fbq('track', name, baseParams, { eventID: meta.eventId });
+        window.fbq(
+          'track',
+          meta.eventName || 'InitiateCheckout',
+          baseParams,
+          { eventID: meta.eventId }
+        );
       } catch {}
     }
     if (window.ttq && typeof window.ttq.track === 'function') {
@@ -199,7 +323,11 @@ export default function Paywall({
         // per (event_name, event_id) so distinct names with the same
         // id co-exist.
         window.ttq.track('AddToCart', ttParams, { event_id: meta.eventId });
-        window.ttq.track(name, ttParams, { event_id: meta.eventId });
+        window.ttq.track(
+          meta.eventName || 'InitiateCheckout',
+          ttParams,
+          { event_id: meta.eventId }
+        );
       } catch {}
     }
   };
@@ -224,7 +352,6 @@ export default function Paywall({
       });
       if (data.trialBlocked) {
         setTrialBlocked(true);
-        // Delay the redirect so the user sees the note before Stripe loads.
         setTimeout(() => { window.location.href = data.url; }, 1500);
         return;
       }
@@ -237,7 +364,10 @@ export default function Paywall({
   };
 
   const isSubscriber =
-    entitlement && (entitlement.tier === 'monthly' || entitlement.tier === 'yearly');
+    entitlement &&
+    (entitlement.tier === 'monthly' ||
+      entitlement.tier === 'pro' ||
+      entitlement.tier === 'yearly');
   const isTrialing = entitlement && entitlement.status === 'trialing';
   const showTopups = isSubscriber;
   const showPlans = !isSubscriber || isTrialing;
@@ -256,7 +386,7 @@ export default function Paywall({
           </h2>
           <p className={styles.subtitle}>
             {isTrialing
-              ? 'Buy a top-up pack to keep going during your trial, or convert to a monthly/yearly plan below.'
+              ? 'Buy a top-up pack to keep going during your trial, or convert to a monthly/pro/yearly plan below.'
               : showTopups
                 ? 'Buy a top-up pack. Credits never expire and stack on your plan.'
                 : copy.pickSubtitle}
@@ -278,91 +408,77 @@ export default function Paywall({
             }}
           >
             Looks like someone on this network already used the free trial.
-            Your plan will start charging immediately — redirecting to
-            checkout&hellip;
+            Your plan will start charging immediately — redirecting to checkout&hellip;
           </div>
         )}
 
         {showPlans && (
-          <div className={styles.tiersTwo}>
-            <article className={styles.tier}>
-              <div className={styles.tierHead}>
-                <h3 className={styles.tierName}>{copy.monthlyName}</h3>
-                <div className={styles.price}>
-                  <span className={styles.amount}>$5</span>
-                  <span className={styles.period}>/ month</span>
-                </div>
-              </div>
-              <ul className={styles.feats}>
-                {copy.monthlyFeats.map((entry, i) => (
-                  <Feat
-                    key={i}
-                    entry={entry}
-                    copy={copy}
-                    infoOpen={infoOpenMonthly}
-                    setInfoOpen={setInfoOpenMonthly}
-                  />
-                ))}
-                {copy.bonusLine && (
-                  <li className={styles.featBonus}>
-                    <span className={styles.bonusTag}>Bonus</span>
-                    {copy.bonusLine}
-                  </li>
-                )}
-              </ul>
-              <button
-                type="button"
-                className={`${styles.btn} ${styles.btnPrimary}`}
-                onClick={() => startCheckout('monthly')}
-                disabled={busy !== null}
-              >
-                {busy === 'monthly'
-                  ? 'Redirecting…'
-                  : isTrialing
-                    ? 'Convert to monthly → $5/mo'
-                    : 'Subscribe → $5/mo'}
-              </button>
-            </article>
-
-            <article className={`${styles.tier} ${styles.tierFeatured}`}>
-              <div className={styles.tierBadge}>
-                Save 50% &middot; Best value
-              </div>
-              <div className={styles.tierHead}>
-                <h3 className={styles.tierName}>{copy.yearlyName}</h3>
-                <div className={styles.price}>
-                  <span className={styles.amount}>$29</span>
-                  <span className={styles.period}>/ year</span>
-                </div>
-              </div>
-              <ul className={styles.feats}>
-                {copy.yearlyFeats.map((entry, i) => (
-                  <Feat
-                    key={i}
-                    entry={entry}
-                    copy={copy}
-                    infoOpen={infoOpenYearly}
-                    setInfoOpen={setInfoOpenYearly}
-                  />
-                ))}
-                {copy.bonusLine && (
-                  <li className={styles.featBonus}>
-                    <span className={styles.bonusTag}>Bonus</span>
-                    {copy.bonusLine}
-                  </li>
-                )}
-              </ul>
-              <button
-                type="button"
-                className={`${styles.btn} ${styles.btnAccent}`}
-                onClick={() => startCheckout('yearly')}
-                disabled={busy !== null}
-              >
-                {busy === 'yearly'
-                  ? 'Redirecting…'
-                  : 'Subscribe → $29/yr'}
-              </button>
-            </article>
+          <div className={styles.tiersThree}>
+            <PlanCard
+              planKey="monthly"
+              name={copy.monthlyName}
+              price={5}
+              period="month"
+              feats={copy.monthlyFeats}
+              bonusLine={copy.bonusLine}
+              copy={copy}
+              infoOpen={infoOpenMonthly}
+              setInfoOpen={setInfoOpenMonthly}
+              busy={busy}
+              onSubscribe={startCheckout}
+              isTrialing={isTrialing}
+              btnClass={styles.btnPrimary}
+              ctaPrefix={isTrialing ? 'Convert to monthly' : 'Subscribe'}
+            />
+            <PlanCard
+              planKey="pro"
+              name={copy.proName}
+              price={9}
+              period="month"
+              feats={copy.proFeats}
+              bonusLine={copy.bonusLine}
+              bonusHighlight={
+                copy.creditsKind === 'video'
+                  ? {
+                      extra: PLAN_VIDEO_CAPS.pro - PLAN_VIDEO_CAPS.monthly,
+                      sub: '3× the credits of Monthly — just $4 more',
+                    }
+                  : null
+              }
+              copy={copy}
+              infoOpen={infoOpenPro}
+              setInfoOpen={setInfoOpenPro}
+              busy={busy}
+              onSubscribe={startCheckout}
+              isTrialing={isTrialing}
+              featured
+              btnClass={styles.btnAccent}
+              ctaPrefix={isTrialing ? 'Convert to Pro' : 'Subscribe'}
+            />
+            <PlanCard
+              planKey="yearly"
+              name={copy.yearlyName}
+              price={29}
+              period="year"
+              feats={copy.yearlyFeats}
+              bonusLine={copy.bonusLine}
+              bonusHighlight={
+                copy.creditsKind === 'video'
+                  ? {
+                      extra: PLAN_VIDEO_CAPS.yearly - PLAN_VIDEO_CAPS.monthly,
+                      sub: '5× the credits of Monthly — best annual value',
+                    }
+                  : null
+              }
+              copy={copy}
+              infoOpen={infoOpenYearly}
+              setInfoOpen={setInfoOpenYearly}
+              busy={busy}
+              onSubscribe={startCheckout}
+              isTrialing={isTrialing}
+              btnClass={styles.btnPrimary}
+              ctaPrefix="Subscribe"
+            />
           </div>
         )}
 

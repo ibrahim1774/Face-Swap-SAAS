@@ -380,6 +380,7 @@ export default function GlowUpPage() {
           <>
           {credits &&
             (credits.tier === 'monthly' ||
+              credits.tier === 'pro' ||
               credits.tier === 'yearly' ||
               credits.tier === 'admin') && (
               <PricingBanner

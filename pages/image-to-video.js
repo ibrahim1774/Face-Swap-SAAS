@@ -226,7 +226,7 @@ export default function ImageToVideoPage() {
           </h1>
           <p className={styles.subtitle}>
             Upload one image and tell us the motion you want. Our top-rated
-            video model paints it to life &mdash; <strong>1 credit per generation</strong>.
+            video model paints it to life &mdash; <strong>from 30 credits per generation</strong>.
           </p>
         </div>
 
@@ -245,8 +245,8 @@ export default function ImageToVideoPage() {
           }}
         >
           ◆ Powered by Kling 3.0 — pick any length from <strong>3 to 15 seconds</strong>.
-          Optional native audio (dialogue, lip-sync, sound effects). 1 credit per
-          3 seconds of video. Generation takes <strong>2&ndash;4 minutes</strong>.
+          Optional native audio (dialogue, lip-sync, sound effects). Cost varies
+          by length / resolution / audio. Generation takes <strong>2&ndash;4 minutes</strong>.
         </div>
 
         <form className={styles.shell} onSubmit={handleSubmit}>
@@ -284,7 +284,13 @@ export default function ImageToVideoPage() {
             />
           </label>
 
-          <DurationSlider value={duration} onChange={setDuration} mode={mode} audio={audio} />
+          <DurationSlider
+            value={duration}
+            onChange={setDuration}
+            model="studio-pro"
+            resolution={mode === 'pro' ? '1080p' : '480p'}
+            audio={audio}
+          />
 
           <div className={styles.swapModeLabel} style={{ marginTop: 16 }}>Audio</div>
           <div className={styles.modeRow} role="radiogroup" aria-label="Audio">

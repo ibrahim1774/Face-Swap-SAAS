@@ -2,10 +2,12 @@ import {
   createKlingSinglePrediction,
   createKlingStoryboardPrediction,
 } from '../../lib/kie';
+import { createSeedancePrediction } from '../../lib/seedance';
 import { getUserFromRequest } from '../../lib/supabaseServer';
 import { getEntitlement, reserveCredits, refundCredits, trackPendingJob } from '../../lib/entitlement';
 import { sendCapiEvent } from '../../lib/meta';
-import { costForGeneration } from '../../lib/cost';
+import { nsEventId } from '../../lib/metaKeys';
+import { costForGeneration, MODELS, RESOLUTIONS } from '../../lib/cost';
 
 function isHttpUrl(value) {
   if (typeof value !== 'string') return false;
@@ -38,14 +40,42 @@ export default async function handler(req, res) {
   const session = await getUserFromRequest(req, res);
   if (!session) return res.status(401).json({ error: 'Authentication required.' });
 
-  const { imageUrl, script, mode, duration, audio, scenes } = req.body || {};
+  const {
+    imageUrl,
+    script,
+    prompt: legacyPrompt,
+    duration,
+    audio,
+    scenes,
+    model: modelRaw,
+    resolution: resolutionRaw,
+    mode: legacyMode,
+  } = req.body || {};
   if (!isHttpUrl(imageUrl)) {
     return res.status(400).json({ error: 'imageUrl is required (http/https URL).' });
   }
 
+  // Legacy /ugc-2 callers send { prompt, mode } instead of
+  // { script, model, resolution }. Translate so both shapes work.
+  const effectiveScript = typeof script === 'string' && script.length > 0
+    ? script
+    : (typeof legacyPrompt === 'string' ? legacyPrompt : '');
+  const legacyModelFromMode =
+    legacyMode === 'pro' || legacyMode === 'std' ? 'studio-pro' : null;
+  const legacyResolutionFromMode = legacyMode === 'pro' ? '1080p' : '480p';
+
+  const model = MODELS.includes(modelRaw)
+    ? modelRaw
+    : (legacyModelFromMode || 'standard');
+  const resolution = RESOLUTIONS.includes(resolutionRaw)
+    ? resolutionRaw
+    : (legacyMode ? legacyResolutionFromMode : '480p');
+  const wantAudio = Boolean(audio);
+
   const isStoryboard = Array.isArray(scenes) && scenes.length > 0;
-  const q = mode === 'pro' ? 'pro' : 'std';
-  const wantAudio = audio !== false;
+  // Storyboard mode is Kling-only (Seedance doesn't support multi_shots).
+  // If a user sends scenes with model='standard', auto-promote to Studio Pro.
+  const effectiveModel = isStoryboard && model === 'standard' ? 'studio-pro' : model;
 
   let totalSeconds;
   let normalizedScenes = null;
@@ -62,7 +92,12 @@ export default async function handler(req, res) {
     totalSeconds = clampDuration(duration);
   }
 
-  const cost = costForGeneration({ seconds: totalSeconds, mode: q, audio: wantAudio });
+  const cost = costForGeneration({
+    seconds: totalSeconds,
+    model: effectiveModel,
+    resolution,
+    audio: wantAudio,
+  });
 
   let entitlement;
   try {
@@ -87,29 +122,42 @@ export default async function handler(req, res) {
 
   try {
     let prediction;
-    if (isStoryboard) {
-      prediction = await createKlingStoryboardPrediction({
-        imageUrl,
-        scenes: normalizedScenes,
-        mode: q,
-        audio: wantAudio,
-      });
+    if (effectiveModel === 'studio-pro') {
+      // Kling 3.0 path. Maps `audio: true/false` and keeps the existing
+      // mode='pro' (resolution-equivalent 1080p) when the user picked
+      // 1080p, else 'std'. Storyboard support preserved.
+      const klingMode = resolution === '1080p' ? 'pro' : 'std';
+      if (isStoryboard) {
+        prediction = await createKlingStoryboardPrediction({
+          imageUrl,
+          scenes: normalizedScenes,
+          mode: klingMode,
+          audio: wantAudio,
+        });
+      } else {
+        prediction = await createKlingSinglePrediction({
+          imageUrl,
+          prompt: effectiveScript || '',
+          duration: totalSeconds,
+          mode: klingMode,
+          audio: wantAudio,
+        });
+      }
     } else {
-      prediction = await createKlingSinglePrediction({
+      // Seedance 1.5 Pro path. Single-scene only.
+      prediction = await createSeedancePrediction({
         imageUrl,
-        prompt: script || '',
+        prompt: effectiveScript || '',
         duration: totalSeconds,
-        mode: q,
+        resolution,
         audio: wantAudio,
       });
     }
-    // Track the queued job so /api/status can refund the cost if Kling
-    // ultimately rejects it (e.g. content moderation). Best-effort —
-    // a tracking failure must not block returning the predictionId.
+
     trackPendingJob(entitlement, prediction.id, cost).catch(() => {});
     sendCapiEvent({
       eventName: 'Generate',
-      eventId: `gen-${prediction.id}`,
+      eventId: nsEventId(`gen-${prediction.id}`),
       value: cost,
       currency: 'USD',
       email: session.user.email,
@@ -119,16 +167,20 @@ export default async function handler(req, res) {
         credits: cost,
         duration: totalSeconds,
         scenes: isStoryboard ? normalizedScenes.length : 1,
-        quality: q,
+        model: effectiveModel,
+        resolution,
         audio: wantAudio,
         supabase_user_id: session.user.id,
       },
     }).catch(() => {});
     return res.status(200).json({
       predictionId: prediction.id,
-      vendor: 'kie',
+      vendor: effectiveModel === 'studio-pro' ? 'kie-kling' : 'kie-seedance',
       status: 'queued',
       cost,
+      model: effectiveModel,
+      resolution,
+      audio: wantAudio,
     });
   } catch (err) {
     console.error('[ugc-animate] failed; refunding credits', err);

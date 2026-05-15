@@ -43,7 +43,15 @@ export default async function handler(req, res) {
   const q = mode === 'pro' ? 'pro' : 'std';
   const dur = clampDuration(duration);
   const wantAudio = audio !== false;
-  const cost = costForGeneration({ seconds: dur, mode: q, audio: wantAudio });
+  // Legacy `mode` (std|pro) maps to the new (model, resolution) pair:
+  //   pro = Studio Pro at 1080p · std = Standard at 480p. costForGeneration's
+  //   new signature takes model/resolution/audio explicitly.
+  const cost = costForGeneration({
+    seconds: dur,
+    model: q === 'pro' ? 'studio-pro' : 'standard',
+    resolution: q === 'pro' ? '1080p' : '480p',
+    audio: wantAudio,
+  });
 
   try {
     await reserveCredits(entitlement, cost);

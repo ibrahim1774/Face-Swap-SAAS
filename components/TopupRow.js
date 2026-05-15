@@ -24,9 +24,9 @@ import paywallStyles from './Paywall.module.css';
 const IMAGE_DISPLAY_MULTIPLIER = 10;
 
 const VIDEO_PACKS = [
-  { pack: 's', label: '$15', credits: 12 },
-  { pack: 'm', label: '$50', credits: 45 },
-  { pack: 'l', label: '$100', credits: 100 },
+  { pack: 's', label: '$15', credits: 2280 },
+  { pack: 'm', label: '$50', credits: 7600 },
+  { pack: 'l', label: '$100', credits: 15200 },
 ];
 
 const IMAGE_PACKS = [

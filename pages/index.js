@@ -544,10 +544,11 @@ export default function Home() {
 
       {entitlement &&
         (entitlement.tier === 'monthly' ||
+          entitlement.tier === 'pro' ||
           entitlement.tier === 'yearly' ||
           entitlement.tier === 'admin') && (
           <PricingBanner
-            lines={[{ label: 'Face Swap', cost: '1 credit per video' }]}
+            lines={[{ label: 'Face Swap', cost: '100 credits per swap' }]}
           />
         )}
 

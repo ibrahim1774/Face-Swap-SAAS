@@ -106,6 +106,7 @@ export default function TopupPage() {
   const isSubscriber =
     entitlement &&
     (entitlement.tier === 'monthly' ||
+      entitlement.tier === 'pro' ||
       entitlement.tier === 'yearly' ||
       entitlement.tier === 'admin');
 

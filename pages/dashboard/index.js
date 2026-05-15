@@ -173,8 +173,8 @@ export default function DashboardPage() {
             <p className={styles.subtitle}>
               {entitlement.tier === 'trial' || entitlement.status === 'trialing'
                 ? `Free trial — ${entitlement.creditsRemaining || 0} credit${entitlement.creditsRemaining === 1 ? '' : 's'} remaining`
-                : entitlement.tier === 'monthly' || entitlement.tier === 'yearly'
-                ? `${entitlement.tier === 'monthly' ? 'Monthly' : 'Yearly'} plan — ${entitlement.creditsRemaining} credits remaining`
+                : entitlement.tier === 'monthly' || entitlement.tier === 'pro' || entitlement.tier === 'yearly'
+                ? `${entitlement.tier === 'monthly' ? 'Monthly' : entitlement.tier === 'pro' ? 'Pro' : 'Yearly'} plan — ${entitlement.creditsRemaining} credits remaining`
                 : 'No active plan. Pick one below to get started.'}
             </p>
           )}
@@ -201,6 +201,7 @@ export default function DashboardPage() {
             </div>
             {!entitlement?.isAdmin &&
               (entitlement?.tier === 'monthly' ||
+                entitlement?.tier === 'pro' ||
                 entitlement?.tier === 'yearly' ||
                 entitlement?.status === 'trialing') && (
                 <section

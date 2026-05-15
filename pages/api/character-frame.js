@@ -2,6 +2,7 @@ import { createCharacterFramePrediction } from '../../lib/replicate';
 import { getUserFromRequest } from '../../lib/supabaseServer';
 import { getEntitlement, reserveCredits, refundCredits } from '../../lib/entitlement';
 import { sendCapiEvent } from '../../lib/meta';
+import { FACE_SWAP_COST } from '../../lib/cost';
 
 function isHttpUrl(value) {
   if (typeof value !== 'string') return false;
@@ -13,7 +14,11 @@ function isHttpUrl(value) {
   }
 }
 
-const COST = 1;
+// Face-swap is a two-stage pipeline: this is the character frame
+// generation (Replicate nano-banana-pro). Total face-swap cost is
+// charged here in one shot; /api/swap (stage 2 motion-transfer) skips
+// the credit gate because stage 1 already reserved.
+const COST = FACE_SWAP_COST;
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {

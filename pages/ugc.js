@@ -5,11 +5,16 @@ import { useRouter } from 'next/router';
 
 import styles from '../styles/Home.module.css';
 import UploadZone from '../components/UploadZone';
-import PricingBanner from '../components/PricingBanner';
 import Processing from '../components/Processing';
 import Paywall from '../components/Paywall';
 import AuthModal from '../components/AuthModal';
-import DurationSlider, { costForDuration } from '../components/DurationSlider';
+import DurationSlider, {
+  costForDuration,
+  snapToStandardPreset,
+  STANDARD_DURATION_PRESETS,
+} from '../components/DurationSlider';
+import ModelPicker from '../components/ModelPicker';
+import ResolutionPicker from '../components/ResolutionPicker';
 import { uploadTempFile } from '../lib/uploader';
 import { getBrowserSupabase } from '../lib/supabase';
 import { bumpEntitlement } from '../lib/entitlementBus';
@@ -66,9 +71,10 @@ export default function UgcPage() {
   const [imageJob, setImageJob] = useState(null);
 
   const [script, setScript] = useState('');
-  const [duration, setDuration] = useState(5);
-  const [mode, setMode] = useState('std');
-  const [audio, setAudio] = useState(true);
+  const [duration, setDuration] = useState(4);
+  const [model, setModel] = useState('standard');
+  const [resolution, setResolution] = useState('480p');
+  const [audio, setAudio] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -154,7 +160,7 @@ export default function UgcPage() {
     if (authUser) fetchEntitlement();
   }, [authUser, fetchEntitlement]);
 
-  const cost = costForDuration(duration, mode, audio);
+  const cost = costForDuration(duration, model, resolution, audio);
   const storyScenes = story?.scenes || [];
   const latestScene = storyScenes[storyScenes.length - 1] || null;
   const atSceneCap = storyScenes.length >= MAX_SCENES;
@@ -240,7 +246,8 @@ export default function UgcPage() {
           imageUrl: effectiveStartImage,
           script,
           duration,
-          mode,
+          model,
+          resolution,
           audio,
         }),
       });
@@ -256,7 +263,8 @@ export default function UgcPage() {
         startImageUrl: effectiveStartImage,
         prompt: script,
         duration,
-        mode,
+        model,
+        resolution,
         audio,
         type: nextSceneType,
       };
@@ -289,7 +297,8 @@ export default function UgcPage() {
         startImageUrl: effectiveStartImage,
         prompt: script,
         duration,
-        mode,
+        model,
+        resolution,
         audio,
         type: nextSceneType,
       };
@@ -309,7 +318,7 @@ export default function UgcPage() {
       setNextSceneType('initial');
       setStep('result');
     },
-    [job, effectiveStartImage, script, duration, mode, audio, nextSceneType, story, imageUrl]
+    [job, effectiveStartImage, script, duration, model, resolution, audio, nextSceneType, story, imageUrl]
   );
 
   const onSceneError = useCallback((msg) => {
@@ -403,8 +412,9 @@ export default function UgcPage() {
     setJob(null);
     setImageJob(null);
     setAudio(true);
-    setMode('std');
-    setDuration(5);
+    setModel('standard');
+    setResolution('480p');
+    setDuration(4);
     setPendingStartImage(null);
     setNextSceneType('initial');
     setError('');
@@ -883,55 +893,29 @@ export default function UgcPage() {
               </div>
             </label>
 
-            <DurationSlider value={duration} onChange={setDuration} mode={mode} audio={audio} />
-
-            <div className={styles.swapModeLabel} style={{ marginTop: 16 }}>Audio</div>
-            <div className={styles.modeRow} role="radiogroup" aria-label="Audio">
-              <button
-                type="button"
-                role="radio"
-                aria-checked={audio === true}
-                className={`${styles.modeBtn} ${audio === true ? styles.modeBtnActive : ''}`}
-                onClick={() => setAudio(true)}
-              >
-                <span className={styles.modeName}>With audio</span>
-                <span className={styles.modeDetail}>Dialogue, lip-sync, ambient SFX</span>
-              </button>
-              <button
-                type="button"
-                role="radio"
-                aria-checked={audio === false}
-                className={`${styles.modeBtn} ${audio === false ? styles.modeBtnActive : ''}`}
-                onClick={() => setAudio(false)}
-              >
-                <span className={styles.modeName}>Silent</span>
-                <span className={styles.modeDetail}>Video only &middot; cheaper output</span>
-              </button>
-            </div>
-
-            <div className={styles.swapModeLabel} style={{ marginTop: 16 }}>Quality</div>
-            <div className={styles.modeRow} role="radiogroup" aria-label="Quality">
-              <button
-                type="button"
-                role="radio"
-                aria-checked={mode === 'std'}
-                className={`${styles.modeBtn} ${mode === 'std' ? styles.modeBtnActive : ''}`}
-                onClick={() => setMode('std')}
-              >
-                <span className={styles.modeName}>Standard</span>
-                <span className={styles.modeDetail}>720p &middot; faster</span>
-              </button>
-              <button
-                type="button"
-                role="radio"
-                aria-checked={mode === 'pro'}
-                className={`${styles.modeBtn} ${mode === 'pro' ? styles.modeBtnActive : ''}`}
-                onClick={() => setMode('pro')}
-              >
-                <span className={styles.modeName}>Pro</span>
-                <span className={styles.modeDetail}>1080p &middot; sharper</span>
-              </button>
-            </div>
+            <ModelPicker
+              value={model}
+              onChange={(next) => {
+                setModel(next);
+                if (next === 'standard') setDuration((d) => snapToStandardPreset(d));
+              }}
+            />
+            <ResolutionPicker
+              model={model}
+              resolution={resolution}
+              audio={audio}
+              onChange={(next) => {
+                setResolution(next.resolution);
+                setAudio(next.audio);
+              }}
+            />
+            <DurationSlider
+              value={duration}
+              onChange={setDuration}
+              model={model}
+              resolution={resolution}
+              audio={audio}
+            />
 
             {error && <div className={styles.error}>{error}</div>}
 
@@ -993,44 +977,26 @@ export default function UgcPage() {
   }
 
   // step === 'choose'
-  const chooseEyebrow =
-    nextSceneType === 'new'
-      ? `◆ Scene ${storyScenes.length + 1} of ${MAX_SCENES} — pick a new image`
-      : '◆ Upload your image';
   // Prompt-to-character generator costs 1 credit, so it only makes
   // sense to surface for users on a paid plan (or trialing). Anon
   // and free users see the upload box only.
   const canUsePromptGenerator =
     entitlement?.tier === 'monthly' ||
+    entitlement?.tier === 'pro' ||
     entitlement?.tier === 'yearly' ||
     entitlement?.status === 'trialing';
   return (
     <>
       <Head><title>From a Single Image to a Full Video — Haelabs</title></Head>
-      <main className={styles.page} style={{ paddingTop: 12 }}>
-        <div className={styles.hero} style={{ marginBottom: 8 }}>
-          <span className={styles.eyebrow}>{chooseEyebrow}</span>
+      <main className={styles.page} style={{ paddingTop: 8 }}>
+        <div className={styles.hero} style={{ marginBottom: 6 }}>
           <h1
             className={styles.headline}
-            style={{ fontSize: 'clamp(22px, 3.6vw, 36px)', margin: '8px 0 6px', lineHeight: 1.15 }}
+            style={{ fontSize: 'clamp(18px, 2.6vw, 26px)', margin: '4px 0', lineHeight: 1.2 }}
           >
-            Turn Your Image Into a Talking, Moving Video &mdash;{' '}
-            <span className={styles.accent}>Just Type What They Say &amp; Do</span>
+            Turn Your Image Into a Talking, Moving Video
           </h1>
         </div>
-
-        {entitlement &&
-          (entitlement.tier === 'monthly' ||
-            entitlement.tier === 'yearly' ||
-            entitlement.tier === 'admin') && (
-            <PricingBanner
-              lines={[
-                { label: 'UGC video', cost: '1 credit per second' },
-                { label: 'AI character image', cost: '1 credit per generation' },
-              ]}
-              note="Pro + audio is billed at 1.5×"
-            />
-          )}
 
         <form onSubmit={handleAnimate} className={styles.ugcCard}>
           {/* 1. Add your character */}
@@ -1110,89 +1076,90 @@ export default function UgcPage() {
           {/* 3. Video length */}
           <section className={styles.ugcSection}>
             <h3 className={styles.ugcSectionTitle}>3. Video length</h3>
-            <input
-              type="range"
-              min={3}
-              max={15}
-              step={1}
-              value={duration}
-              onChange={(e) => setDuration(Number(e.target.value))}
-              className={styles.ugcSlider}
-              aria-label="Video length"
-            />
-            <div className={styles.ugcSliderLabels}>
-              <div className={styles.ugcSliderTick}>
-                <span className={styles.ugcSliderTickValue}>3s</span>
-                <span className={styles.ugcSliderTickLabel}>Short</span>
+            {model === 'standard' ? (
+              <div
+                role="radiogroup"
+                aria-label="Video length"
+                style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}
+              >
+                {STANDARD_DURATION_PRESETS.map((sec) => {
+                  const selected = duration === sec;
+                  return (
+                    <button
+                      key={sec}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      onClick={() => setDuration(sec)}
+                      style={{
+                        flex: '1 1 0',
+                        padding: '14px 12px',
+                        borderRadius: 12,
+                        border: selected
+                          ? '1px solid rgba(255,255,255,0.55)'
+                          : '1px solid rgba(255,255,255,0.12)',
+                        background: selected ? '#ededed' : '#0f0f11',
+                        color: selected ? '#0b0b0c' : '#ededed',
+                        fontFamily: 'inherit',
+                        fontSize: 15,
+                        fontWeight: selected ? 600 : 500,
+                        cursor: 'pointer',
+                        transition: 'background 120ms ease, color 120ms ease',
+                      }}
+                    >
+                      {sec}s
+                    </button>
+                  );
+                })}
               </div>
-              <div className={styles.ugcSliderTick} style={{ textAlign: 'center' }}>
-                <span className={styles.ugcSliderTickValue}>{duration}s</span>
-                <span className={styles.ugcSliderTickLabel}>
-                  {duration <= 5 ? 'Short' : duration <= 9 ? 'Medium' : 'Long'}
-                </span>
-              </div>
-              <div className={styles.ugcSliderTick} style={{ textAlign: 'right' }}>
-                <span className={styles.ugcSliderTickValue}>15s</span>
-                <span className={styles.ugcSliderTickLabel}>Long</span>
-              </div>
-            </div>
+            ) : (
+              <>
+                <input
+                  type="range"
+                  min={3}
+                  max={15}
+                  step={1}
+                  value={duration}
+                  onChange={(e) => setDuration(Number(e.target.value))}
+                  className={styles.ugcSlider}
+                  aria-label="Video length"
+                />
+                <div className={styles.ugcSliderLabels}>
+                  <div className={styles.ugcSliderTick}>
+                    <span className={styles.ugcSliderTickValue}>3s</span>
+                    <span className={styles.ugcSliderTickLabel}>Short</span>
+                  </div>
+                  <div className={styles.ugcSliderTick} style={{ textAlign: 'center' }}>
+                    <span className={styles.ugcSliderTickValue}>{duration}s</span>
+                    <span className={styles.ugcSliderTickLabel}>
+                      {duration <= 5 ? 'Short' : duration <= 9 ? 'Medium' : 'Long'}
+                    </span>
+                  </div>
+                  <div className={styles.ugcSliderTick} style={{ textAlign: 'right' }}>
+                    <span className={styles.ugcSliderTickValue}>15s</span>
+                    <span className={styles.ugcSliderTickLabel}>Long</span>
+                  </div>
+                </div>
+              </>
+            )}
           </section>
 
-          {/* Audio + Quality */}
-          <section className={styles.ugcRowTwo}>
-            <div>
-              <div className={styles.ugcMiniLabel}>
-                <span aria-hidden="true">𝅗𝅥</span> Audio
-              </div>
-              <div className={styles.modeRow} role="radiogroup" aria-label="Audio">
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={audio === true}
-                  className={`${styles.modeBtn} ${audio === true ? styles.modeBtnActive : ''}`}
-                  onClick={() => setAudio(true)}
-                >
-                  <span className={styles.modeName}>With voice</span>
-                </button>
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={audio === false}
-                  className={`${styles.modeBtn} ${audio === false ? styles.modeBtnActive : ''}`}
-                  onClick={() => setAudio(false)}
-                >
-                  <span className={styles.modeName}>Silent</span>
-                </button>
-              </div>
-            </div>
-            <div>
-              <div className={styles.ugcMiniLabel}>
-                <span aria-hidden="true">▦</span> Quality
-              </div>
-              <div className={styles.modeRow} role="radiogroup" aria-label="Quality">
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={mode === 'std'}
-                  className={`${styles.modeBtn} ${mode === 'std' ? styles.modeBtnActive : ''}`}
-                  onClick={() => setMode('std')}
-                >
-                  <span className={styles.modeName}>Standard</span>
-                  <span className={styles.modeDetail}>720p</span>
-                </button>
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={mode === 'pro'}
-                  className={`${styles.modeBtn} ${mode === 'pro' ? styles.modeBtnActive : ''}`}
-                  onClick={() => setMode('pro')}
-                >
-                  <span className={styles.modeName}>Pro <span aria-hidden="true">♕</span></span>
-                  <span className={styles.modeDetail}>1080p</span>
-                </button>
-              </div>
-            </div>
-          </section>
+          <ModelPicker
+              value={model}
+              onChange={(next) => {
+                setModel(next);
+                if (next === 'standard') setDuration((d) => snapToStandardPreset(d));
+              }}
+            />
+          <ResolutionPicker
+            model={model}
+            resolution={resolution}
+            audio={audio}
+            onChange={(next) => {
+              setResolution(next.resolution);
+              setAudio(next.audio);
+            }}
+          />
 
           {error && <div className={styles.error}>{error}</div>}
 

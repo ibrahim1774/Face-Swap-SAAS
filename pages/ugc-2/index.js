@@ -150,7 +150,14 @@ export default function Ugc2Page() {
     if (authUser) fetchEntitlement();
   }, [authUser, fetchEntitlement]);
 
-  const cost = costForDuration(duration, mode, audio);
+  // /ugc-2 runs on Kling 3.0 only (Studio Pro). Legacy mode std/pro maps
+  // to 480p / 1080p resolution.
+  const cost = costForDuration(
+    duration,
+    'studio-pro',
+    mode === 'pro' ? '1080p' : '480p',
+    audio
+  );
   const storyScenes = story?.scenes || [];
   const latestScene = storyScenes[storyScenes.length - 1] || null;
   const atSceneCap = storyScenes.length >= MAX_SCENES;
@@ -158,6 +165,7 @@ export default function Ugc2Page() {
   const hasActiveSub =
     entitlement &&
     (entitlement.tier === 'monthly' ||
+      entitlement.tier === 'pro' ||
       entitlement.tier === 'yearly' ||
       entitlement.tier === 'admin') &&
     (entitlement.status === 'active' ||
@@ -843,7 +851,7 @@ export default function Ugc2Page() {
 
           <div style={calloutStyle}>
             ◆ Powered by Kling 3.0 — <strong>3&ndash;15 seconds</strong> per scene with
-            optional native audio. <strong>1 credit per second</strong> of video.
+            optional native audio. Cost scales with length / resolution / audio.
             Generation takes 2&ndash;4 minutes.
           </div>
 
@@ -881,7 +889,13 @@ export default function Ugc2Page() {
               </div>
             </label>
 
-            <DurationSlider value={duration} onChange={setDuration} mode={mode} audio={audio} />
+            <DurationSlider
+              value={duration}
+              onChange={setDuration}
+              model="studio-pro"
+              resolution={mode === 'pro' ? '1080p' : '480p'}
+              audio={audio}
+            />
 
             <div className={styles.swapModeLabel} style={{ marginTop: 16 }}>Audio</div>
             <div className={styles.modeRow} role="radiogroup" aria-label="Audio">
@@ -989,6 +1003,7 @@ export default function Ugc2Page() {
       : '◆ Upload your image';
   const canUsePromptGenerator =
     entitlement?.tier === 'monthly' ||
+    entitlement?.tier === 'pro' ||
     entitlement?.tier === 'yearly' ||
     entitlement?.status === 'trialing';
 
@@ -1009,14 +1024,15 @@ export default function Ugc2Page() {
 
         {entitlement &&
           (entitlement.tier === 'monthly' ||
+            entitlement.tier === 'pro' ||
             entitlement.tier === 'yearly' ||
             entitlement.tier === 'admin') && (
             <PricingBanner
               lines={[
-                { label: 'UGC video', cost: '1 credit per second' },
+                { label: 'UGC video', cost: 'from 10 cr/sec at 480p silent' },
                 { label: 'AI character image', cost: '1 credit per generation' },
               ]}
-              note="Pro + audio is billed at 1.5×"
+              note="Higher resolution / audio costs more credits"
             />
           )}
 
