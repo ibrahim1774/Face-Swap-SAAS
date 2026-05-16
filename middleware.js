@@ -66,10 +66,11 @@ export async function middleware(req) {
   }
 
   // Protected pages \u2014 redirect anonymous users to sign-in.
-  // /ugc is intentionally NOT here: it's a marketing landing for
-  // anonymous visitors and the creator for authed users, gated inline
-  // in pages/ugc.js (mirrors how / works for face-swap).
-  const protectedPages = ['/dashboard', '/image-to-video', '/video/editing', '/history', '/admin', '/topup'];
+  // /ugc and /video/editing are intentionally NOT here: they're
+  // marketing-style landings for anonymous visitors that gate inline
+  // at the CTA click (sign-up after the user shows intent), mirroring
+  // how / works for face-swap.
+  const protectedPages = ['/dashboard', '/image-to-video', '/history', '/admin', '/topup'];
   if (protectedPages.some((p) => pathname.startsWith(p)) && !user) {
     const redirect = req.nextUrl.clone();
     redirect.pathname = '/sign-in';
