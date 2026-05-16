@@ -1,0 +1,30 @@
+# Fly.io app config for the long-form video editor worker.
+#
+# The worker has no HTTP service — it's a background polling loop. Fly
+# auto-stop / auto-start keeps the machine paused when there's no work
+# queued so the only cost is active render time.
+
+app = "haelabs-video-editor-worker"
+primary_region = "iad"  # match the Supabase project region; override per deploy
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  POLL_INTERVAL_MS = "5000"
+  WATCHDOG_TIMEOUT_MS = "1200000"
+
+# No [http_service] block — pure worker. Fly still runs auto-stop/auto-start
+# at the machine level via [[vm]].
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 2
+  memory_mb = 2048
+
+[processes]
+  worker = "node index.js"
+
+# Single-machine deploy by default. Scale up by adding more machines
+# via `fly scale count 2` once concurrent renders matter (Stage 5).
+[deploy]
+  strategy = "rolling"

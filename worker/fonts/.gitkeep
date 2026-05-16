@@ -1,0 +1,5 @@
+# Bundle fonts here at build time (Inter, Anton, Bebas Neue, etc.) so
+# libass can resolve them when burning subtitles into the video. ASS
+# templates that reference fonts NOT in this folder will silently fall
+# back to a generic sans-serif. Drop .ttf or .otf files alongside this
+# .gitkeep before running `fly deploy`.
