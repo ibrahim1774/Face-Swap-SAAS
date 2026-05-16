@@ -16,6 +16,15 @@ const PLAN_VIDEO_CAPS = {
 };
 const CREDITS_PER_BASE_VIDEO = 40;
 
+// Video-editor pool caps mirror lib/stripe.js PLANS.{plan}.videoEditorCap.
+// 30 credits per minute of source video editing.
+const PLAN_EDITOR_CAPS = {
+  monthly: 1500,
+  pro: 4500,
+  yearly: 7500,
+};
+const EDITOR_CREDITS_PER_MIN = 30;
+
 const SURFACE_COPY = {
   video: {
     monthlyName: 'Monthly',
@@ -108,6 +117,45 @@ const SURFACE_COPY = {
     creditsKind: 'image',
     imageNoun: 'redesigns',
   },
+  'video-editor': {
+    monthlyName: 'Video Editor Monthly Plan',
+    proName: 'Video Editor Pro Plan',
+    yearlyName: 'Video Editor Yearly Plan',
+    pickHeader: 'Pick a plan to edit your video',
+    pickSubtitle: 'AI auto-editor: filler-removal, captions, transitions, auto-zoom. Cancel anytime.',
+    monthlyFeats: [
+      { editorMinutes: true, plan: 'monthly' },
+      'Auto-removes filler words, silences, and retakes',
+      'Burned-in captions in 5+ styles (CapCut Pop · MrBeast Bold · Podcast Clean · more)',
+      'AI-placed transitions between scenes',
+      'Auto-zoom on emphatic moments',
+      'Vertical 9:16 reframe for shorts',
+      'Top up anytime for more editor credits',
+      'Cancel anytime',
+    ],
+    proFeats: [
+      { strong: '3× the editor minutes', after: ' of monthly' },
+      { editorMinutes: true, plan: 'pro' },
+      'Auto-removes filler words, silences, and retakes',
+      'Burned-in captions in 5+ styles',
+      'AI transitions + auto-zoom + vertical reframe',
+      'Chat with Claude to fine-tune the edit',
+      'Top up anytime for more editor credits',
+      'Cancel anytime',
+    ],
+    yearlyFeats: [
+      { strong: 'Best annual value', after: ' — biggest editor pool' },
+      { editorMinutes: true, plan: 'yearly' },
+      'Auto-removes filler words, silences, and retakes',
+      'Burned-in captions in 5+ styles',
+      'AI transitions + auto-zoom + vertical reframe',
+      'Chat with Claude to fine-tune the edit',
+      'Top up anytime for more editor credits',
+      'One charge, cancel anytime',
+    ],
+    bonusLine: 'Plus all Haelabs AI tools (Face Swap · UGC · Glow Up · Interior)',
+    creditsKind: 'video-editor',
+  },
 };
 
 function ImageCreditsLine({ multiplier, cap, noun, infoOpen, setInfoOpen }) {
@@ -157,6 +205,34 @@ function VideoCreditsLine({ plan, infoOpen, setInfoOpen }) {
   );
 }
 
+function EditorMinutesLine({ plan, infoOpen, setInfoOpen }) {
+  const cap = PLAN_EDITOR_CAPS[plan] || 0;
+  const minutes = Math.floor(cap / EDITOR_CREDITS_PER_MIN);
+  const period = plan === 'yearly' ? 'per year' : 'per month';
+  return (
+    <>
+      <strong>
+        {minutes.toLocaleString()} min of AI auto-editing
+      </strong>{' '}
+      {period}
+      {' '}
+      <button
+        type="button"
+        className={styles.infoBtn}
+        aria-label={`${cap.toLocaleString()} editor credits — 30 cr per minute of source video`}
+        onClick={() => setInfoOpen((v) => !v)}
+      >
+        ⓘ
+      </button>
+      {infoOpen && (
+        <span className={styles.infoTip}>
+          <strong>{cap.toLocaleString()} editor credits</strong> {period} · 30 credits = 1 minute of source video.
+        </span>
+      )}
+    </>
+  );
+}
+
 function Feat({ entry, copy, infoOpen, setInfoOpen }) {
   if (typeof entry === 'string') return <li>{entry}</li>;
   if (entry && entry.strong) {
@@ -184,6 +260,17 @@ function Feat({ entry, copy, infoOpen, setInfoOpen }) {
     return (
       <li>
         <VideoCreditsLine
+          plan={entry.plan}
+          infoOpen={infoOpen}
+          setInfoOpen={setInfoOpen}
+        />
+      </li>
+    );
+  }
+  if (entry && entry.editorMinutes) {
+    return (
+      <li>
+        <EditorMinutesLine
           plan={entry.plan}
           infoOpen={infoOpen}
           setInfoOpen={setInfoOpen}
@@ -443,6 +530,11 @@ export default function Paywall({
                       extra: PLAN_VIDEO_CAPS.pro - PLAN_VIDEO_CAPS.monthly,
                       sub: '3× the credits of Monthly — just $4 more',
                     }
+                  : copy.creditsKind === 'video-editor'
+                  ? {
+                      extra: PLAN_EDITOR_CAPS.pro - PLAN_EDITOR_CAPS.monthly,
+                      sub: '3× the editor minutes of Monthly — just $4 more',
+                    }
                   : null
               }
               copy={copy}
@@ -467,6 +559,11 @@ export default function Paywall({
                   ? {
                       extra: PLAN_VIDEO_CAPS.yearly - PLAN_VIDEO_CAPS.monthly,
                       sub: '5× the credits of Monthly — best annual value',
+                    }
+                  : copy.creditsKind === 'video-editor'
+                  ? {
+                      extra: PLAN_EDITOR_CAPS.yearly - PLAN_EDITOR_CAPS.monthly,
+                      sub: '5× the editor minutes of Monthly — best annual value',
                     }
                   : null
               }

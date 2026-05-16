@@ -1,0 +1,25 @@
+# fly.toml app configuration file generated for haelabs-video-editor-worker on 2026-05-16T18:11:33-04:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'haelabs-video-editor-worker'
+primary_region = 'iad'
+
+[build]
+  dockerfile = 'Dockerfile'
+
+[deploy]
+  strategy = 'rolling'
+
+[env]
+  POLL_INTERVAL_MS = '5000'
+  WATCHDOG_TIMEOUT_MS = '1200000'
+
+[processes]
+  worker = 'node index.js'
+
+[[vm]]
+  cpu_kind = 'shared'
+  cpus = 2
+  memory_mb = 2048

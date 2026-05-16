@@ -1,32 +1,43 @@
-import { v4 as uuidv4 } from 'uuid';
-
 import { getUserFromRequest, getSupabaseAdmin } from '../../../lib/supabaseServer';
-import { getEntitlement, reserveCredits, refundCredits } from '../../../lib/entitlement';
-import { validateEditPlan } from '../../../lib/editPlan';
-import { renderEditPlan } from '../../../lib/ffmpegRender';
-import { createJob, updateProgress, completeJob, failJob } from '../../../lib/renderJobs';
+import {
+  costForEditorJob,
+  reserveVideoEditorCredits,
+  refundVideoEditorCredits,
+  resolveVideoEditorEntitlement,
+} from '../../../lib/videoEditorCredits';
+import { stripe } from '../../../lib/stripe';
 
 export const config = {
   api: {
-    bodyParser: { sizeLimit: '1mb' },
+    bodyParser: { sizeLimit: '2mb' },
   },
-  maxDuration: 300,
 };
 
 /*
- * Kicks off an edit-plan render. Reserves 1 credit, returns a
- * renderId immediately, and spawns ffmpeg in the background. Client
- * polls /api/video/render-status to watch progress.
+ * Long-form video editor — render enqueue shim.
  *
- * On success: writes outputUrl to the video_renders Supabase row.
- * On failure: refunds the credit and marks the row as failed.
+ * Replaces the prior in-Vercel FFmpeg execution. The actual render
+ * happens on a Fly.io worker (see /worker) that polls the render_jobs
+ * table. This endpoint:
  *
- * Note on Vercel runtime: the maxDuration of 300s is the upper bound
- * on this serverless invocation. ffmpeg runs inside it. If a render
- * takes longer than 300s the function is killed by Vercel and the
- * job is marked failed by the next poll (since the in-memory map will
- * still say "rendering" but the function is gone). Output cap of 60s
- * in lib/editPlan.js makes that very unlikely in practice.
+ *   1. Validates the editPlan + source duration.
+ *   2. Charges the video-editor credit pool (30 cr/min source).
+ *   3. Inserts a row into render_jobs as `pending`.
+ *   4. Returns `{ renderId }`. Caller polls /api/video/render-status.
+ *
+ * Body:
+ *   {
+ *     editPlan: {
+ *       sourceUrl: string,           // public Vercel Blob URL
+ *       sourceDurationSec: number,   // for cost calc + watchdog
+ *       keepIntervals: [{ start, end }],  // worker's render input
+ *       userPrompt?: string,
+ *       width?, height?, duration?
+ *     }
+ *   }
+ *
+ * 402s on no-plan / insufficient credit (response carries `remaining`
+ * + `cost` so the UI can prompt a topup or paywall).
  */
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -38,122 +49,131 @@ export default async function handler(req, res) {
   if (!session) return res.status(401).json({ error: 'Authentication required.' });
 
   const { editPlan } = req.body || {};
-  if (!editPlan) return res.status(400).json({ error: 'editPlan required' });
-
-  const planCheck = validateEditPlan(editPlan);
-  if (!planCheck.valid) {
-    return res.status(400).json({ error: 'editPlan invalid', details: planCheck.errors });
+  if (!editPlan || typeof editPlan !== 'object') {
+    return res.status(400).json({ error: 'editPlan is required.' });
+  }
+  const sourceUrl = typeof editPlan.sourceUrl === 'string' ? editPlan.sourceUrl : '';
+  if (!sourceUrl.startsWith('https://')) {
+    return res.status(400).json({ error: 'editPlan.sourceUrl must be an https URL.' });
+  }
+  const sourceDurationSec = Number(editPlan.sourceDurationSec);
+  if (!Number.isFinite(sourceDurationSec) || sourceDurationSec <= 0) {
+    return res.status(400).json({ error: 'editPlan.sourceDurationSec is required.' });
+  }
+  const keepIntervals = Array.isArray(editPlan.keepIntervals) ? editPlan.keepIntervals : [];
+  if (keepIntervals.length === 0) {
+    return res.status(400).json({ error: 'editPlan.keepIntervals must include at least one segment.' });
+  }
+  // Cap at 30 min source — matches the long-form editor's product
+  // promise. Larger inputs require a Stage 5 multi-machine queue and
+  // we want to fail fast rather than half-render.
+  if (sourceDurationSec > 30 * 60 + 30) {
+    return res.status(400).json({ error: 'Source video exceeds the 30-minute cap.' });
   }
 
-  // Credit gate — reuses the same path as /api/swap.
-  let entitlement;
-  try {
-    entitlement = await getEntitlement({
-      supabase: session.supabase,
-      userId: session.user.id,
-      email: session.user.email,
+  // Find the customer + their plan.
+  const admin = getSupabaseAdmin();
+  const { data: profile } = await admin
+    .from('profiles')
+    .select('stripe_customer_id')
+    .eq('id', session.user.id)
+    .maybeSingle();
+  const customerId = profile?.stripe_customer_id || null;
+  if (!customerId) {
+    return res.status(402).json({
+      error: 'No Stripe customer linked. Subscribe first.',
+      code: 'NO_PLAN',
     });
-    await reserveCredits(entitlement, 1);
+  }
+
+  // Pull plan name from customer metadata. resolveVideoEditorEntitlement
+  // applies the period rollover lazily — same pattern as
+  // /api/glow-up.
+  let plan = null;
+  try {
+    const customer = await stripe().customers.retrieve(customerId);
+    if (customer && !customer.deleted) {
+      plan = customer.metadata?.plan || null;
+    }
   } catch (err) {
-    if (err.code === 'NO_PLAN' || err.code === 'INSUFFICIENT') {
+    console.warn('[video/render] customer fetch failed', err.message);
+  }
+  await resolveVideoEditorEntitlement({ customerId, plan });
+
+  // Compute cost from source duration (NOT output duration). Mirrors
+  // every other tool that bills users — predictable cost, shown
+  // upfront on the preview screen.
+  const cost = costForEditorJob({ sourceSeconds: sourceDurationSec });
+
+  // Reserve credits BEFORE inserting the row so a failure here never
+  // leaves an orphan pending job.
+  try {
+    await reserveVideoEditorCredits({ customerId, plan, cost });
+  } catch (err) {
+    if (err.code === 'INSUFFICIENT') {
       return res.status(402).json({
-        error: err.code === 'NO_PLAN' ? 'No active plan.' : 'Insufficient credits.',
-        code: err.code,
-        remaining: err.remaining,
+        error: 'Out of video-editor credits. Top up to render.',
+        code: 'INSUFFICIENT',
+        remaining: err.remaining || 0,
+        cost,
       });
     }
-    console.error('[video/render] credit reservation failed', err);
-    return res.status(500).json({ error: 'Could not reserve credit.' });
+    if (err.code === 'NO_CUSTOMER') {
+      return res.status(402).json({
+        error: 'No Stripe customer linked. Subscribe first.',
+        code: 'NO_PLAN',
+      });
+    }
+    console.error('[video/render] reservation failed', err.message);
+    return res.status(500).json({ error: 'Could not reserve credits.' });
   }
 
-  const renderId = uuidv4();
-  createJob(renderId, session.user.id);
+  // Enqueue the render job.
+  const sanitizedPlan = {
+    sourceUrl,
+    sourceDurationSec,
+    keepIntervals: keepIntervals
+      .map((iv) => ({
+        start: Math.max(0, Number(iv.start) || 0),
+        end: Math.max(0, Number(iv.end) || 0),
+      }))
+      .filter((iv) => iv.end > iv.start),
+    userPrompt: typeof editPlan.userPrompt === 'string' ? editPlan.userPrompt.slice(0, 600) : '',
+    width: Number(editPlan.width) || null,
+    height: Number(editPlan.height) || null,
+  };
+  if (sanitizedPlan.keepIntervals.length === 0) {
+    // Refund — we already reserved.
+    await refundVideoEditorCredits({ customerId, amount: cost });
+    return res.status(400).json({ error: 'Edit plan contains no playable segments after sanitation.' });
+  }
 
-  // Persist a row so we can audit + show history later. The output
-  // URL is filled in once the render completes.
-  let supabaseRow = null;
+  let inserted;
   try {
-    const admin = getSupabaseAdmin();
     const { data, error } = await admin
-      .from('video_renders')
+      .from('render_jobs')
       .insert({
         user_id: session.user.id,
-        render_id: renderId,
-        edit_plan: editPlan,
-        status: 'rendering',
+        stripe_customer_id: customerId,
+        source_url: sourceUrl,
+        source_seconds: sourceDurationSec,
+        edit_plan: sanitizedPlan,
+        cost_credits: cost,
+        status: 'pending',
       })
-      .select()
+      .select('id')
       .single();
-    if (error) {
-      console.warn('[video/render] could not insert video_renders row', error.message);
-    } else {
-      supabaseRow = data;
-    }
+    if (error) throw error;
+    inserted = data;
   } catch (err) {
-    console.warn('[video/render] supabase insert threw', err.message);
+    console.error('[video/render] enqueue failed', err.message);
+    await refundVideoEditorCredits({ customerId, amount: cost });
+    return res.status(500).json({ error: 'Could not enqueue render.' });
   }
 
-  // Respond immediately so the client can start polling.
-  res.status(200).json({ renderId });
-
-  // Run the render. We've already responded, so any error here is
-  // surfaced via render-status (and the credit refund + DB update).
-  try {
-    const result = await renderEditPlan(editPlan, {
-      onProgress: (p) => updateProgress(renderId, p),
-    });
-    completeJob(renderId, result.outputUrl);
-    if (supabaseRow) {
-      try {
-        const admin = getSupabaseAdmin();
-        await admin
-          .from('video_renders')
-          .update({
-            status: 'completed',
-            output_url: result.outputUrl,
-            completed_at: new Date().toISOString(),
-          })
-          .eq('render_id', renderId);
-      } catch (dbErr) {
-        console.warn('[video/render] could not update completed row', dbErr.message);
-      }
-    }
-    // Also surface in /history so the user can find it for 24h.
-    try {
-      const admin = getSupabaseAdmin();
-      const expiresAt = new Date(Date.now() + 23 * 60 * 60 * 1000).toISOString();
-      await admin.from('videos').upsert(
-        {
-          user_id: session.user.id,
-          prediction_id: renderId,
-          kind: 'video-edit',
-          result_url: result.outputUrl,
-          is_blob_owned: true,
-          expires_at: expiresAt,
-        },
-        { onConflict: 'prediction_id', ignoreDuplicates: true }
-      );
-    } catch (histErr) {
-      console.warn('[video/render] history insert failed', histErr.message);
-    }
-  } catch (err) {
-    console.error('[video/render] ffmpeg failed', err);
-    failJob(renderId, err.message || 'Render failed.');
-    refundCredits(entitlement, 1).catch((refundErr) => {
-      console.error('[video/render] refund failed', refundErr);
-    });
-    if (supabaseRow) {
-      try {
-        const admin = getSupabaseAdmin();
-        await admin
-          .from('video_renders')
-          .update({
-            status: 'failed',
-            error_message: (err.message || 'render failed').slice(0, 500),
-            completed_at: new Date().toISOString(),
-          })
-          .eq('render_id', renderId);
-      } catch {}
-    }
-  }
+  return res.status(200).json({
+    renderId: inserted.id,
+    cost,
+    queued: true,
+  });
 }

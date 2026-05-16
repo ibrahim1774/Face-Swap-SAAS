@@ -1,0 +1,19 @@
+{
+  "name": "haelabs-video-editor-worker",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Fly.io background worker for the long-form video editor. Polls render_jobs and runs single-pass FFmpeg.",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "render": "node render.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0",
+    "stripe": "^16.0.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
