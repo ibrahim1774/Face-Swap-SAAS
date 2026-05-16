@@ -79,12 +79,17 @@ async function processOne() {
     // 4. Settle.
     await markDone(job.id, outputUrl);
   } catch (err) {
-    console.error('[worker] job failed', job?.id, err.message);
     if (job?.id) {
+      console.error('[worker] job failed', job.id, err.message);
       await markFailed(job.id, {
         code: 'render-error',
         message: err.message || 'Render failed.',
       });
+    } else {
+      // No job claimed yet — failure was in the claim path itself
+      // (e.g. Supabase client init). Log once and let the next poll
+      // retry. Avoids spamming "job failed undefined" every 5 sec.
+      console.error('[worker] poll failed (no job claimed)', err.message);
     }
   } finally {
     await cleanupTmp(inputPath, outputPath);

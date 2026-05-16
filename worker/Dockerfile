@@ -3,7 +3,7 @@
 # Node 20 + FFmpeg 6 + bundled fonts. Single image used by Fly for the
 # polling worker. Build-time `npm ci`; runtime `node index.js`.
 
-FROM node:20-bookworm-slim AS base
+FROM node:22-bookworm-slim AS base
 
 # FFmpeg + minimum fonts. fontconfig is required so libass can resolve
 # bundled fonts inside /usr/share/fonts at render time.
