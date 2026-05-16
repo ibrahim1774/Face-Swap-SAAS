@@ -118,43 +118,35 @@ const SURFACE_COPY = {
     imageNoun: 'redesigns',
   },
   'video-editor': {
-    monthlyName: 'Video Editor Monthly Plan',
+    monthlyName: 'Video Editor Monthly',
     proName: 'Video Editor Pro Plan',
-    yearlyName: 'Video Editor Yearly Plan',
+    yearlyName: 'Video Editor Yearly',
     pickHeader: 'Pick a plan to edit your video',
-    pickSubtitle: 'AI auto-editor: filler-removal, captions, transitions, auto-zoom. Cancel anytime.',
+    pickSubtitle: 'AI auto-editor: filler-removal, silence trim, more coming soon. Cancel anytime.',
     monthlyFeats: [
-      { editorMinutes: true, plan: 'monthly' },
-      'Auto-removes filler words, silences, and retakes',
-      'Burned-in captions in 5+ styles (CapCut Pop · MrBeast Bold · Podcast Clean · more)',
-      'AI-placed transitions between scenes',
-      'Auto-zoom on emphatic moments',
-      'Vertical 9:16 reframe for shorts',
+      { editorCredits: true, plan: 'monthly' },
+      'Auto-removes filler words ("um", "uh", "er", "ah")',
+      'Trims long silences (0.5s+ pauses)',
+      'Single-pass FFmpeg render — no quality loss',
       'Top up anytime for more editor credits',
       'Cancel anytime',
     ],
     proFeats: [
-      { strong: '3× the editor minutes', after: ' of monthly' },
-      { editorMinutes: true, plan: 'pro' },
-      'Auto-removes filler words, silences, and retakes',
-      'Burned-in captions in 5+ styles',
-      'AI transitions + auto-zoom + vertical reframe',
-      'Chat with Claude to fine-tune the edit',
+      { editorCredits: true, plan: 'pro' },
+      'Everything in Monthly',
       'Top up anytime for more editor credits',
       'Cancel anytime',
     ],
     yearlyFeats: [
-      { strong: 'Best annual value', after: ' — biggest editor pool' },
-      { editorMinutes: true, plan: 'yearly' },
-      'Auto-removes filler words, silences, and retakes',
-      'Burned-in captions in 5+ styles',
-      'AI transitions + auto-zoom + vertical reframe',
-      'Chat with Claude to fine-tune the edit',
+      { editorCredits: true, plan: 'yearly' },
+      'Auto-removes filler words ("um", "uh", "er", "ah")',
+      'Trims long silences (0.5s+ pauses)',
+      'Single-pass FFmpeg render — no quality loss',
       'Top up anytime for more editor credits',
       'One charge, cancel anytime',
     ],
-    bonusLine: 'Plus all Haelabs AI tools (Face Swap · UGC · Glow Up · Interior)',
     creditsKind: 'video-editor',
+    twoCard: true,
   },
 };
 
@@ -233,6 +225,31 @@ function EditorMinutesLine({ plan, infoOpen, setInfoOpen }) {
   );
 }
 
+function EditorCreditsLine({ plan, infoOpen, setInfoOpen }) {
+  const cap = PLAN_EDITOR_CAPS[plan] || 0;
+  const minutes = Math.floor(cap / EDITOR_CREDITS_PER_MIN);
+  const period = plan === 'yearly' ? 'per year' : 'per month';
+  return (
+    <>
+      <strong>{cap.toLocaleString()} editor credits</strong> {period}
+      {' '}
+      <button
+        type="button"
+        className={styles.infoBtn}
+        aria-label={`approximately ${minutes} minutes of source video — 30 credits per minute`}
+        onClick={() => setInfoOpen((v) => !v)}
+      >
+        ⓘ
+      </button>
+      {infoOpen && (
+        <span className={styles.infoTip}>
+          <strong>30 credits = 1 minute</strong> of source video. {cap.toLocaleString()} credits ≈ {minutes.toLocaleString()} minutes of footage you can auto-edit {period}.
+        </span>
+      )}
+    </>
+  );
+}
+
 function Feat({ entry, copy, infoOpen, setInfoOpen }) {
   if (typeof entry === 'string') return <li>{entry}</li>;
   if (entry && entry.strong) {
@@ -271,6 +288,17 @@ function Feat({ entry, copy, infoOpen, setInfoOpen }) {
     return (
       <li>
         <EditorMinutesLine
+          plan={entry.plan}
+          infoOpen={infoOpen}
+          setInfoOpen={setInfoOpen}
+        />
+      </li>
+    );
+  }
+  if (entry && entry.editorCredits) {
+    return (
+      <li>
+        <EditorCreditsLine
           plan={entry.plan}
           infoOpen={infoOpen}
           setInfoOpen={setInfoOpen}
@@ -500,14 +528,14 @@ export default function Paywall({
         )}
 
         {showPlans && (
-          <div className={styles.tiersThree}>
+          <div className={copy.twoCard ? styles.tiersTwo || styles.tiersThree : styles.tiersThree}>
             <PlanCard
               planKey="monthly"
               name={copy.monthlyName}
               price={5}
               period="month"
               feats={copy.monthlyFeats}
-              bonusLine={copy.bonusLine}
+              bonusLine={copy.twoCard ? null : copy.bonusLine}
               copy={copy}
               infoOpen={infoOpenMonthly}
               setInfoOpen={setInfoOpenMonthly}
@@ -517,45 +545,49 @@ export default function Paywall({
               btnClass={styles.btnPrimary}
               ctaPrefix={isTrialing ? 'Convert to monthly' : 'Subscribe'}
             />
-            <PlanCard
-              planKey="pro"
-              name={copy.proName}
-              price={9}
-              period="month"
-              feats={copy.proFeats}
-              bonusLine={copy.bonusLine}
-              bonusHighlight={
-                copy.creditsKind === 'video'
-                  ? {
-                      extra: PLAN_VIDEO_CAPS.pro - PLAN_VIDEO_CAPS.monthly,
-                      sub: '3× the credits of Monthly — just $4 more',
-                    }
-                  : copy.creditsKind === 'video-editor'
-                  ? {
-                      extra: PLAN_EDITOR_CAPS.pro - PLAN_EDITOR_CAPS.monthly,
-                      sub: '3× the editor minutes of Monthly — just $4 more',
-                    }
-                  : null
-              }
-              copy={copy}
-              infoOpen={infoOpenPro}
-              setInfoOpen={setInfoOpenPro}
-              busy={busy}
-              onSubscribe={startCheckout}
-              isTrialing={isTrialing}
-              featured
-              btnClass={styles.btnAccent}
-              ctaPrefix={isTrialing ? 'Convert to Pro' : 'Subscribe'}
-            />
+            {!copy.twoCard && (
+              <PlanCard
+                planKey="pro"
+                name={copy.proName}
+                price={9}
+                period="month"
+                feats={copy.proFeats}
+                bonusLine={copy.bonusLine}
+                bonusHighlight={
+                  copy.creditsKind === 'video'
+                    ? {
+                        extra: PLAN_VIDEO_CAPS.pro - PLAN_VIDEO_CAPS.monthly,
+                        sub: '3× the credits of Monthly — just $4 more',
+                      }
+                    : copy.creditsKind === 'video-editor'
+                    ? {
+                        extra: PLAN_EDITOR_CAPS.pro - PLAN_EDITOR_CAPS.monthly,
+                        sub: '3× the editor minutes of Monthly — just $4 more',
+                      }
+                    : null
+                }
+                copy={copy}
+                infoOpen={infoOpenPro}
+                setInfoOpen={setInfoOpenPro}
+                busy={busy}
+                onSubscribe={startCheckout}
+                isTrialing={isTrialing}
+                featured
+                btnClass={styles.btnAccent}
+                ctaPrefix={isTrialing ? 'Convert to Pro' : 'Subscribe'}
+              />
+            )}
             <PlanCard
               planKey="yearly"
               name={copy.yearlyName}
               price={29}
               period="year"
               feats={copy.yearlyFeats}
-              bonusLine={copy.bonusLine}
+              bonusLine={copy.twoCard ? null : copy.bonusLine}
               bonusHighlight={
-                copy.creditsKind === 'video'
+                copy.twoCard
+                  ? null
+                  : copy.creditsKind === 'video'
                   ? {
                       extra: PLAN_VIDEO_CAPS.yearly - PLAN_VIDEO_CAPS.monthly,
                       sub: '5× the credits of Monthly — best annual value',
@@ -573,7 +605,8 @@ export default function Paywall({
               busy={busy}
               onSubscribe={startCheckout}
               isTrialing={isTrialing}
-              btnClass={styles.btnPrimary}
+              featured={copy.twoCard}
+              btnClass={copy.twoCard ? styles.btnAccent : styles.btnPrimary}
               ctaPrefix="Subscribe"
             />
           </div>

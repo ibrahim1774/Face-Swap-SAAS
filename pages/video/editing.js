@@ -16,6 +16,11 @@ import { deriveKeepIntervals, totalKeptSeconds } from '../../lib/cutPlan';
 
 const PENDING_KEY = 've_pending_edit';
 
+const DEFAULT_TOGGLES = {
+  removeFillers: true,
+  removeSilences: true,
+};
+
 function hasEditorAccess(entitlement) {
   if (!entitlement) return false;
   if (entitlement.isAdmin) return true;
@@ -54,6 +59,62 @@ function probeVideo(file) {
   });
 }
 
+function ToggleRow({ label, sublabel, checked, onChange }) {
+  return (
+    <label
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        padding: '12px 14px',
+        borderRadius: 10,
+        border: '1px solid rgba(255,255,255,0.10)',
+        background: checked ? 'rgba(224, 196, 136, 0.05)' : 'rgba(255,255,255,0.02)',
+        cursor: 'pointer',
+        transition: 'background 120ms ease, border-color 120ms ease',
+        borderColor: checked ? 'rgba(224, 196, 136, 0.35)' : 'rgba(255,255,255,0.10)',
+      }}
+    >
+      <span
+        aria-hidden
+        style={{
+          width: 20,
+          height: 20,
+          borderRadius: 6,
+          flexShrink: 0,
+          border: `1.5px solid ${checked ? 'var(--gold, #e0c488)' : 'rgba(255,255,255,0.25)'}`,
+          background: checked ? 'var(--gold, #e0c488)' : 'transparent',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: '#0b0b0c',
+          fontSize: 13,
+          fontWeight: 800,
+          lineHeight: 1,
+        }}
+      >
+        {checked ? '✓' : ''}
+      </span>
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ display: 'block', fontSize: 14, fontWeight: 600, color: '#ededed' }}>
+          {label}
+        </span>
+        {sublabel && (
+          <span style={{ display: 'block', fontSize: 12, color: '#9b978f', marginTop: 2 }}>
+            {sublabel}
+          </span>
+        )}
+      </span>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        style={{ position: 'absolute', opacity: 0, pointerEvents: 'none' }}
+      />
+    </label>
+  );
+}
+
 export default function VideoEditingPage() {
   const router = useRouter();
   const [authUser, setAuthUser] = useState(null);
@@ -67,8 +128,10 @@ export default function VideoEditingPage() {
   const [editPlan, setEditPlan] = useState(null);
   const [chatHistory, setChatHistory] = useState([]);
   const [editDescription, setEditDescription] = useState('');
+  const [toggles, setToggles] = useState(DEFAULT_TOGGLES);
   const [entitlement, setEntitlement] = useState(null);
   const [pendingResume, setPendingResume] = useState(null);
+  const autoAdvancedRef = useRef(false);
 
   // Stage 1: AssemblyAI transcript + auto-cut preview state.
   const [transcriptId, setTranscriptId] = useState(null);
@@ -102,9 +165,11 @@ export default function VideoEditingPage() {
     return () => listener?.subscription?.unsubscribe?.();
   }, []);
 
-  // Restore any pending edit-description from before sign-up. The CTA
-  // saves edit intent to sessionStorage before redirecting to /sign-up
-  // so the description survives the auth round-trip.
+  // Restore pending state from before sign-up or paywall. The CTA
+  // saves edit intent to sessionStorage before redirecting so it
+  // survives auth + checkout round-trips. Three shapes possible:
+  //   - { editDescription, fileName, toggles }                 (anon path)
+  //   - { ..., sourceUrl, sourceDurationSec, w, h }            (authed upload path)
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
@@ -114,8 +179,17 @@ export default function VideoEditingPage() {
       if (saved && typeof saved.editDescription === 'string') {
         setEditDescription(saved.editDescription);
       }
+      if (saved && saved.toggles && typeof saved.toggles === 'object') {
+        setToggles({ ...DEFAULT_TOGGLES, ...saved.toggles });
+      }
       if (saved && saved.fileName) {
-        setPendingResume({ fileName: saved.fileName });
+        setPendingResume({
+          fileName: saved.fileName,
+          sourceUrl: saved.sourceUrl || null,
+          sourceDurationSec: saved.sourceDurationSec || null,
+          sourceWidth: saved.sourceWidth || null,
+          sourceHeight: saved.sourceHeight || null,
+        });
       }
     } catch {
       // ignore parse failures
@@ -208,16 +282,60 @@ export default function VideoEditingPage() {
     setPendingResume(null);
   };
 
+  // Kick off transcription against an already-uploaded source URL.
+  // Used both by the post-upload flow and by post-paywall auto-resume.
+  const startTranscription = useCallback(async ({ sourceUrl, duration, width, height }) => {
+    const plan = emptyPlan({
+      sourceUrl,
+      duration,
+      width: width || 1080,
+      height: height || 1920,
+    });
+    if (editDescription && editDescription.trim()) {
+      plan.userPrompt = editDescription.trim();
+    }
+    plan.toggles = toggles;
+    setEditPlan(plan);
+    setChatHistory([]);
+
+    setTranscriptId(null);
+    setTranscript(null);
+    setTranscriptOverrides({});
+    setTranscriptError('');
+    setTranscriptStatus('queued');
+    setStep('transcribing');
+    try {
+      const tr = await fetch('/api/video/transcribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sourceUrl }),
+      });
+      const td = await tr.json();
+      if (!tr.ok) throw new Error(td.error || 'Transcription failed to start.');
+      setTranscriptId(td.transcriptId);
+      setTranscriptStatus(td.status === 'completed' ? 'completed' : td.status || 'queued');
+    } catch (err) {
+      setTranscriptError(err.message || 'Transcription failed.');
+      setTranscriptStatus('error');
+    }
+
+    try { sessionStorage.removeItem(PENDING_KEY); } catch {}
+  }, [editDescription, toggles]);
+
   // "Edit My Video" CTA. Routes by auth + entitlement state:
-  //   anon                 → save intent to sessionStorage, go to /sign-up
-  //   authed, no plan      → show paywall
-  //   authed, has plan     → upload + transition to editor
+  //   anon              → save metadata only, redirect to /sign-up
+  //                       (no Blob upload yet — avoids junk from bouncers)
+  //   authed, no plan   → upload to Blob, save full state, show paywall
+  //                       so after payment we auto-resume
+  //   authed, has plan  → upload + transcribe immediately
   const handleEditMyVideo = async () => {
     if (!sourceFile) {
       setRenderError('Pick a video first.');
       return;
     }
 
+    // Anon: just save what we have, send to sign-up. The user re-picks
+    // their file after auth — keeps Blob clean of abandoned uploads.
     if (authLoaded && !authUser) {
       try {
         sessionStorage.setItem(
@@ -225,67 +343,53 @@ export default function VideoEditingPage() {
           JSON.stringify({
             editDescription,
             fileName: sourceFile.name,
+            toggles,
           })
         );
       } catch {
-        // sessionStorage may be unavailable in private mode; the user
-        // will just lose the description across the round-trip.
+        // sessionStorage may be unavailable in private mode
       }
       const returnTo = encodeURIComponent('/video/editing');
       router.push(`/sign-up?returnTo=${returnTo}`);
       return;
     }
 
-    if (authUser && !hasEditorAccess(entitlement)) {
-      setStep('paywall');
-      return;
-    }
-
-    // Authed + has plan: do the real upload now.
     setRenderError('');
     setSourceUploading(true);
     try {
       const meta = await probeVideo(sourceFile);
       const url = await uploadTempFile(sourceFile);
-      const plan = emptyPlan({
+
+      // Authed but no plan: persist everything so the post-payment
+      // landing can auto-resume to transcription without re-uploading.
+      if (authUser && !hasEditorAccess(entitlement)) {
+        try {
+          sessionStorage.setItem(
+            PENDING_KEY,
+            JSON.stringify({
+              editDescription,
+              fileName: sourceFile.name,
+              toggles,
+              sourceUrl: url,
+              sourceDurationSec: meta.duration,
+              sourceWidth: meta.width || 1080,
+              sourceHeight: meta.height || 1920,
+            })
+          );
+        } catch {}
+        autoAdvancedRef.current = true; // we'll handle resume manually
+        setStep('paywall');
+        setSourceUploading(false);
+        return;
+      }
+
+      // Authed + plan: go straight to transcribe.
+      await startTranscription({
         sourceUrl: url,
         duration: meta.duration,
-        width: meta.width || 1080,
-        height: meta.height || 1920,
+        width: meta.width,
+        height: meta.height,
       });
-      if (editDescription && editDescription.trim()) {
-        plan.userPrompt = editDescription.trim();
-      }
-      setEditPlan(plan);
-      setChatHistory([]);
-
-      // Kick off transcription. The preview step shows the user what
-      // gets auto-cut before we let them advance to the manual editor.
-      setTranscriptId(null);
-      setTranscript(null);
-      setTranscriptOverrides({});
-      setTranscriptError('');
-      setTranscriptStatus('queued');
-      setStep('transcribing');
-      try {
-        const tr = await fetch('/api/video/transcribe', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sourceUrl: url }),
-        });
-        const td = await tr.json();
-        if (!tr.ok) throw new Error(td.error || 'Transcription failed to start.');
-        setTranscriptId(td.transcriptId);
-        setTranscriptStatus(td.status === 'completed' ? 'completed' : td.status || 'queued');
-        // If the cache already had it completed, the poll effect will
-        // hydrate `transcript` on its first tick.
-      } catch (err) {
-        setTranscriptError(err.message || 'Transcription failed.');
-        setTranscriptStatus('error');
-      }
-
-      // Clear the pending sessionStorage now that the upload succeeded.
-      try { sessionStorage.removeItem(PENDING_KEY); } catch {}
     } catch (err) {
       setRenderError(err.message || 'Upload failed.');
       setSourceFile(null);
@@ -293,6 +397,25 @@ export default function VideoEditingPage() {
       setSourceUploading(false);
     }
   };
+
+  // Post-payment auto-resume. When the user returns from Stripe with
+  // a valid plan AND we have a sourceUrl in sessionStorage from the
+  // pre-paywall upload, kick off transcription so they don't have to
+  // re-upload or re-click anything.
+  useEffect(() => {
+    if (autoAdvancedRef.current) return;
+    if (!authUser || !entitlement) return;
+    if (!hasEditorAccess(entitlement)) return;
+    if (step !== 'upload') return;
+    if (!pendingResume?.sourceUrl) return;
+    autoAdvancedRef.current = true;
+    startTranscription({
+      sourceUrl: pendingResume.sourceUrl,
+      duration: pendingResume.sourceDurationSec || 0,
+      width: pendingResume.sourceWidth,
+      height: pendingResume.sourceHeight,
+    });
+  }, [authUser, entitlement, pendingResume, step, startTranscription]);
 
   // Poll transcript-status while a job is in flight. Completes the
   // transition to 'preview' the moment AssemblyAI returns done.
@@ -344,6 +467,8 @@ export default function VideoEditingPage() {
       preview: transcript.preview,
       overrides: transcriptOverrides,
       sourceDurationSec: transcript.durationSec || editPlan.duration,
+      cutFillers: toggles.removeFillers,
+      cutSilences: toggles.removeSilences,
     });
     if (intervals.length === 0) {
       setRenderError('Edit plan would produce an empty video. Keep at least one segment.');
@@ -434,6 +559,11 @@ export default function VideoEditingPage() {
     setTranscriptOverrides({});
     setTranscriptError('');
     setTranscriptStatus('idle');
+    setEditDescription('');
+    setToggles(DEFAULT_TOGGLES);
+    setPendingResume(null);
+    autoAdvancedRef.current = true; // suppress auto-resume after a manual reset
+    try { sessionStorage.removeItem(PENDING_KEY); } catch {}
     setStep('upload');
   };
 
@@ -468,41 +598,52 @@ export default function VideoEditingPage() {
 
         {step === 'upload' && (
           <div className={styles.canvas}>
-            {showAnonIntro && (
+            <div
+              style={{
+                maxWidth: 720,
+                margin: '0 auto 22px',
+                textAlign: 'center',
+                color: '#ededed',
+              }}
+            >
               <div
                 style={{
-                  maxWidth: 640,
-                  margin: '0 auto 18px',
-                  padding: '16px 20px',
-                  borderRadius: 12,
-                  border: '1px solid rgba(224, 196, 136, 0.25)',
-                  background: 'rgba(224, 196, 136, 0.05)',
-                  color: '#e6e6e6',
-                  textAlign: 'center',
-                  lineHeight: 1.5,
+                  fontFamily: 'var(--font-mono, ui-monospace, monospace)',
+                  fontSize: 11,
+                  letterSpacing: '0.22em',
+                  textTransform: 'uppercase',
+                  color: 'var(--gold, #e0c488)',
+                  marginBottom: 10,
                 }}
               >
-                <div
-                  style={{
-                    fontFamily: 'var(--font-mono, ui-monospace, monospace)',
-                    fontSize: 11,
-                    letterSpacing: '0.22em',
-                    textTransform: 'uppercase',
-                    color: 'var(--gold, #e0c488)',
-                    marginBottom: 6,
-                  }}
-                >
-                  ◆ AI auto-editor
-                </div>
-                <div style={{ fontSize: 14 }}>
-                  Upload your video, tell us what you want, and we&rsquo;ll remove
-                  fillers, polish the audio, and burn in captions. No login
-                  required to start — sign up only when you&rsquo;re ready to render.
-                </div>
+                ◆ AI Auto-Editor
               </div>
-            )}
+              <h2
+                style={{
+                  margin: 0,
+                  fontSize: 'clamp(26px, 4vw, 38px)',
+                  lineHeight: 1.1,
+                  fontWeight: 700,
+                  letterSpacing: '-0.01em',
+                }}
+              >
+                Cut the cruft. Keep the good stuff.
+              </h2>
+              <p
+                style={{
+                  margin: '14px auto 0',
+                  maxWidth: 580,
+                  fontSize: 'clamp(14px, 1.6vw, 16px)',
+                  lineHeight: 1.55,
+                  color: '#b8b6b1',
+                }}
+              >
+                Drop a long-form video. Pick what to clean up. Get a polished
+                cut back in minutes — no manual trimming required.
+              </p>
+            </div>
 
-            {pendingResume && (
+            {pendingResume && !pendingResume.sourceUrl && (
               <div
                 style={{
                   maxWidth: 640,
@@ -521,6 +662,25 @@ export default function VideoEditingPage() {
               </div>
             )}
 
+            {pendingResume?.sourceUrl && (
+              <div
+                style={{
+                  maxWidth: 640,
+                  margin: '0 auto 14px',
+                  padding: '12px 16px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(224, 196, 136, 0.3)',
+                  background: 'rgba(224, 196, 136, 0.06)',
+                  color: '#ededed',
+                  fontSize: 13,
+                  textAlign: 'center',
+                  lineHeight: 1.5,
+                }}
+              >
+                Welcome back — your video <strong>{pendingResume.fileName}</strong> is uploaded and ready. Starting analysis…
+              </div>
+            )}
+
             <UploadZone
               label="Upload a video to edit"
               sublabel="MP4 / MOV · up to 1 GB"
@@ -533,7 +693,34 @@ export default function VideoEditingPage() {
             />
 
             {sourceFile && (
-              <div style={{ marginTop: 18, maxWidth: 640, marginInline: 'auto' }}>
+              <div style={{ marginTop: 22, maxWidth: 640, marginInline: 'auto' }}>
+                <div
+                  style={{
+                    fontFamily: 'var(--font-mono, ui-monospace, monospace)',
+                    fontSize: 11,
+                    letterSpacing: '0.18em',
+                    textTransform: 'uppercase',
+                    color: '#9b978f',
+                    marginBottom: 10,
+                  }}
+                >
+                  Pick what to clean up
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <ToggleRow
+                    label="Remove filler words"
+                    sublabel='"um", "uh", "er", "ah" — auto-detected and cut'
+                    checked={toggles.removeFillers}
+                    onChange={(v) => setToggles((t) => ({ ...t, removeFillers: v }))}
+                  />
+                  <ToggleRow
+                    label="Trim long silences"
+                    sublabel="Pauses longer than 0.5s get tightened"
+                    checked={toggles.removeSilences}
+                    onChange={(v) => setToggles((t) => ({ ...t, removeSilences: v }))}
+                  />
+                </div>
+
                 <label
                   htmlFor="ve-edit-description"
                   style={{
@@ -543,10 +730,10 @@ export default function VideoEditingPage() {
                     letterSpacing: '0.18em',
                     textTransform: 'uppercase',
                     color: '#9b978f',
-                    marginBottom: 8,
+                    margin: '22px 0 8px',
                   }}
                 >
-                  What kind of edits do you want? <span style={{ color: '#6b6b6b' }}>(optional)</span>
+                  Anything else? <span style={{ color: '#6b6b6b' }}>(optional)</span>
                 </label>
                 <textarea
                   id="ve-edit-description"
@@ -554,7 +741,7 @@ export default function VideoEditingPage() {
                   value={editDescription}
                   onChange={(e) => setEditDescription(e.target.value.slice(0, 600))}
                   maxLength={600}
-                  placeholder="e.g. Remove ums and long pauses, add bold captions, cut to under 5 minutes"
+                  placeholder="e.g. Cut to under 5 minutes, keep the intro tight, prioritize the punchline at 4:30"
                   style={{
                     width: '100%',
                     padding: '12px 14px',
@@ -573,7 +760,7 @@ export default function VideoEditingPage() {
                   onClick={handleEditMyVideo}
                   disabled={sourceUploading || !sourceFile}
                   style={{
-                    marginTop: 14,
+                    marginTop: 16,
                     width: '100%',
                     padding: '14px 18px',
                     borderRadius: 12,
@@ -592,8 +779,8 @@ export default function VideoEditingPage() {
                 </button>
                 {!authUser && (
                   <p style={{ marginTop: 10, fontSize: 12, color: '#9b978f', textAlign: 'center' }}>
-                    You&rsquo;ll sign up on the next step. Your video and edit
-                    description stay on this page until then.
+                    You&rsquo;ll sign up on the next step. Your edit choices stay
+                    on this page until you come back.
                   </p>
                 )}
               </div>
@@ -691,6 +878,8 @@ export default function VideoEditingPage() {
               preview={transcript.preview}
               overrides={transcriptOverrides}
               onOverridesChange={setTranscriptOverrides}
+              cutFillers={toggles.removeFillers}
+              cutSilences={toggles.removeSilences}
             />
             <div
               style={{

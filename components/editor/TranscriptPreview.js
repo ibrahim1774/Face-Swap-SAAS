@@ -28,6 +28,8 @@ export default function TranscriptPreview({
   overrides = {},
   onOverridesChange,
   onWordClick,
+  cutFillers = true,
+  cutSilences = true,
 }) {
   const videoRef = useRef(null);
   const [currentMs, setCurrentMs] = useState(0);
@@ -48,32 +50,33 @@ export default function TranscriptPreview({
   // doesn't re-iterate the whole list every render.
   const isWordCut = useMemo(() => {
     return words.map((w, idx) => {
-      const auto = w.isFiller;
+      const auto = cutFillers && w.isFiller;
       const override = overrides[idx];
       if (override === 'keep') return false;
       if (override === 'cut') return true;
       return auto;
     });
-  }, [words, overrides]);
+  }, [words, overrides, cutFillers]);
+
+  // Per-word silence-cut decision. Mirrors deriveKeepIntervals so the
+  // preview's "estimated output" matches what actually gets rendered.
+  const isSilenceCut = useMemo(() => {
+    return words.map((w, idx) => {
+      if (w.leadingSilenceMs < SILENCE_MIN_MS) return false;
+      const o = overrides[`silence-${idx}`];
+      if (o === 'cut') return true;
+      if (o === 'keep') return false;
+      return cutSilences;
+    });
+  }, [words, overrides, cutSilences]);
 
   const cutCount = isWordCut.filter(Boolean).length;
-  const silenceCount = words.filter((w) => w.leadingSilenceMs >= SILENCE_MIN_MS).length;
-  const silencesKeptByOverride = words.reduce((acc, w, idx) => {
-    if (w.leadingSilenceMs >= SILENCE_MIN_MS && overrides[`silence-${idx}`] === 'keep') return acc + 1;
-    return acc;
-  }, 0);
-  const effectiveSilenceCuts = silenceCount - silencesKeptByOverride;
+  const effectiveSilenceCuts = isSilenceCut.filter(Boolean).length;
 
   const totalDurationMs = words.length ? words[words.length - 1].end : 0;
   const cutDurationMs = words.reduce((acc, w, idx) => {
     if (isWordCut[idx]) acc += Math.max(0, (w.end || 0) - (w.start || 0));
-    // Subtract removed silences too.
-    if (
-      w.leadingSilenceMs >= SILENCE_MIN_MS &&
-      overrides[`silence-${idx}`] !== 'keep'
-    ) {
-      acc += w.leadingSilenceMs;
-    }
+    if (isSilenceCut[idx]) acc += w.leadingSilenceMs;
     return acc;
   }, 0);
   const keptDurationMs = Math.max(0, totalDurationMs - cutDurationMs);
@@ -90,9 +93,7 @@ export default function TranscriptPreview({
     if (!onOverridesChange) return;
     const next = { ...overrides };
     const key = `silence-${idx}`;
-    const currentlyKept = next[key] === 'keep';
-    if (currentlyKept) delete next[key];
-    else next[key] = 'keep';
+    next[key] = isSilenceCut[idx] ? 'keep' : 'cut';
     onOverridesChange(next);
   };
 
@@ -149,12 +150,9 @@ export default function TranscriptPreview({
             const isCut = isWordCut[idx];
             const isAuto = w.isFiller;
             const isManual = overrides[idx] === 'cut';
-            const showSilence =
-              w.leadingSilenceMs >= SILENCE_MIN_MS &&
-              overrides[`silence-${idx}`] !== 'keep';
-            const showSilenceKept =
-              w.leadingSilenceMs >= SILENCE_MIN_MS &&
-              overrides[`silence-${idx}`] === 'keep';
+            const hasSilence = w.leadingSilenceMs >= SILENCE_MIN_MS;
+            const showSilence = hasSilence && isSilenceCut[idx];
+            const showSilenceKept = hasSilence && !isSilenceCut[idx];
             const isLive = currentMs >= w.start && currentMs <= w.end;
 
             const wordStyle = {
