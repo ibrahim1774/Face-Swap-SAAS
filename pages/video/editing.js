@@ -6,6 +6,7 @@ import styles from '../../styles/Editor.module.css';
 import UploadZone from '../../components/UploadZone';
 import AIChatPanel from '../../components/editor/AIChatPanel';
 import Paywall from '../../components/Paywall';
+import TranscriptPreview from '../../components/editor/TranscriptPreview';
 import { uploadTempFile } from '../../lib/uploader';
 import { getBrowserSupabase } from '../../lib/supabase';
 import { bumpEntitlement } from '../../lib/entitlementBus';
@@ -57,7 +58,7 @@ export default function VideoEditingPage() {
   const [authUser, setAuthUser] = useState(null);
   const [authLoaded, setAuthLoaded] = useState(false);
 
-  // 'upload' | 'paywall' | 'editing' | 'rendering' | 'done'
+  // 'upload' | 'paywall' | 'transcribing' | 'preview' | 'editing' | 'rendering' | 'done'
   const [step, setStep] = useState('upload');
 
   const [sourceFile, setSourceFile] = useState(null);
@@ -68,12 +69,20 @@ export default function VideoEditingPage() {
   const [entitlement, setEntitlement] = useState(null);
   const [pendingResume, setPendingResume] = useState(null);
 
+  // Stage 1: AssemblyAI transcript + auto-cut preview state.
+  const [transcriptId, setTranscriptId] = useState(null);
+  const [transcriptStatus, setTranscriptStatus] = useState('idle'); // idle|queued|processing|completed|error
+  const [transcript, setTranscript] = useState(null); // { preview, durationSec, chapters, ... }
+  const [transcriptOverrides, setTranscriptOverrides] = useState({});
+  const [transcriptError, setTranscriptError] = useState('');
+
   const [renderId, setRenderId] = useState(null);
   const [renderProgress, setRenderProgress] = useState(0);
   const [renderResult, setRenderResult] = useState(null);
   const [renderError, setRenderError] = useState('');
 
   const pollRef = useRef(null);
+  const transcriptPollRef = useRef(null);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -248,7 +257,32 @@ export default function VideoEditingPage() {
       }
       setEditPlan(plan);
       setChatHistory([]);
-      setStep('editing');
+
+      // Kick off transcription. The preview step shows the user what
+      // gets auto-cut before we let them advance to the manual editor.
+      setTranscriptId(null);
+      setTranscript(null);
+      setTranscriptOverrides({});
+      setTranscriptError('');
+      setTranscriptStatus('queued');
+      setStep('transcribing');
+      try {
+        const tr = await fetch('/api/video/transcribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sourceUrl: url }),
+        });
+        const td = await tr.json();
+        if (!tr.ok) throw new Error(td.error || 'Transcription failed to start.');
+        setTranscriptId(td.transcriptId);
+        setTranscriptStatus(td.status === 'completed' ? 'completed' : td.status || 'queued');
+        // If the cache already had it completed, the poll effect will
+        // hydrate `transcript` on its first tick.
+      } catch (err) {
+        setTranscriptError(err.message || 'Transcription failed.');
+        setTranscriptStatus('error');
+      }
+
       // Clear the pending sessionStorage now that the upload succeeded.
       try { sessionStorage.removeItem(PENDING_KEY); } catch {}
     } catch (err) {
@@ -257,6 +291,47 @@ export default function VideoEditingPage() {
     } finally {
       setSourceUploading(false);
     }
+  };
+
+  // Poll transcript-status while a job is in flight. Completes the
+  // transition to 'preview' the moment AssemblyAI returns done.
+  useEffect(() => {
+    if (step !== 'transcribing' || !transcriptId) return undefined;
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const r = await fetch(
+          `/api/video/transcript-status?transcriptId=${encodeURIComponent(transcriptId)}`
+        );
+        const d = await r.json();
+        if (cancelled) return;
+        if (d.status === 'completed') {
+          setTranscript(d);
+          setTranscriptStatus('completed');
+          setStep('preview');
+        } else if (d.status === 'error') {
+          setTranscriptStatus('error');
+          setTranscriptError(d.errorMessage || 'Transcription failed.');
+        } else {
+          setTranscriptStatus(d.status || 'processing');
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setTranscriptStatus('error');
+          setTranscriptError(err.message || 'Status check failed.');
+        }
+      }
+    };
+    tick();
+    transcriptPollRef.current = setInterval(tick, 4000);
+    return () => {
+      cancelled = true;
+      if (transcriptPollRef.current) clearInterval(transcriptPollRef.current);
+    };
+  }, [step, transcriptId]);
+
+  const handleContinueFromPreview = () => {
+    setStep('editing');
   };
 
   const handleRender = useCallback(async () => {
@@ -298,6 +373,11 @@ export default function VideoEditingPage() {
     setRenderResult(null);
     setRenderProgress(0);
     setRenderError('');
+    setTranscriptId(null);
+    setTranscript(null);
+    setTranscriptOverrides({});
+    setTranscriptError('');
+    setTranscriptStatus('idle');
     setStep('upload');
   };
 
@@ -487,6 +567,99 @@ export default function VideoEditingPage() {
               </button>
             </div>
             {renderError && <div className={styles.msgError}>{renderError}</div>}
+          </div>
+        )}
+
+        {step === 'transcribing' && (
+          <div className={styles.canvas}>
+            <div
+              style={{
+                maxWidth: 560,
+                margin: '24px auto',
+                padding: '24px 28px',
+                borderRadius: 14,
+                border: '1px solid rgba(255,255,255,0.10)',
+                background: 'rgba(255,255,255,0.02)',
+                textAlign: 'center',
+                color: '#ededed',
+              }}
+            >
+              <div
+                style={{
+                  fontFamily: 'var(--font-mono, ui-monospace, monospace)',
+                  fontSize: 11,
+                  letterSpacing: '0.22em',
+                  textTransform: 'uppercase',
+                  color: 'var(--gold, #e0c488)',
+                  marginBottom: 10,
+                }}
+              >
+                ◆ Analyzing your video
+              </div>
+              <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>
+                {transcriptStatus === 'error'
+                  ? 'Transcription failed'
+                  : transcriptStatus === 'completed'
+                  ? 'Transcript ready'
+                  : transcriptStatus === 'processing'
+                  ? 'Reading the audio…'
+                  : 'Submitting to AssemblyAI…'}
+              </div>
+              <div style={{ fontSize: 13, color: '#9b978f', lineHeight: 1.5 }}>
+                Usually 30–90 seconds. We&rsquo;re finding filler words, silences,
+                chapter breaks, and emphasis peaks so the editor can suggest
+                smart cuts on the next screen.
+              </div>
+              {transcriptError && (
+                <div className={styles.msgError} style={{ marginTop: 14 }}>
+                  {transcriptError}
+                </div>
+              )}
+              <div style={{ marginTop: 18 }}>
+                <button
+                  type="button"
+                  onClick={() => setStep('upload')}
+                  className={styles.downloadBtn}
+                >
+                  ← Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {step === 'preview' && editPlan && transcript && (
+          <div className={styles.canvas}>
+            <TranscriptPreview
+              videoUrl={editPlan.sourceUrl}
+              preview={transcript.preview}
+              overrides={transcriptOverrides}
+              onOverridesChange={setTranscriptOverrides}
+            />
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 12,
+                marginTop: 18,
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setStep('upload')}
+                className={styles.downloadBtn}
+              >
+                ← Start over
+              </button>
+              <button
+                type="button"
+                onClick={handleContinueFromPreview}
+                className={styles.renderBtn}
+              >
+                Continue to editor →
+              </button>
+            </div>
           </div>
         )}
 
