@@ -119,7 +119,7 @@ const SURFACE_COPY = {
   },
   'video-editor': {
     monthlyName: 'Video Editor Monthly',
-    proName: 'Video Editor Pro Plan',
+    proName: 'Video Editor Pro',
     yearlyName: 'Video Editor Yearly',
     pickHeader: 'Pick a plan to edit your video',
     pickSubtitle: 'AI auto-editor: filler-removal, silence trim, more coming soon. Cancel anytime.',
@@ -134,6 +134,8 @@ const SURFACE_COPY = {
     proFeats: [
       { editorCredits: true, plan: 'pro' },
       'Everything in Monthly',
+      'Auto-removes filler words ("um", "uh", "er", "ah")',
+      'Trims long silences (0.5s+ pauses)',
       'Top up anytime for more editor credits',
       'Cancel anytime',
     ],
@@ -146,7 +148,6 @@ const SURFACE_COPY = {
       'One charge, cancel anytime',
     ],
     creditsKind: 'video-editor',
-    twoCard: true,
   },
 };
 
@@ -528,14 +529,14 @@ export default function Paywall({
         )}
 
         {showPlans && (
-          <div className={copy.twoCard ? styles.tiersTwo || styles.tiersThree : styles.tiersThree}>
+          <div className={styles.tiersThree}>
             <PlanCard
               planKey="monthly"
               name={copy.monthlyName}
               price={5}
               period="month"
               feats={copy.monthlyFeats}
-              bonusLine={copy.twoCard ? null : copy.bonusLine}
+              bonusLine={copy.bonusLine}
               copy={copy}
               infoOpen={infoOpenMonthly}
               setInfoOpen={setInfoOpenMonthly}
@@ -545,49 +546,45 @@ export default function Paywall({
               btnClass={styles.btnPrimary}
               ctaPrefix={isTrialing ? 'Convert to monthly' : 'Subscribe'}
             />
-            {!copy.twoCard && (
-              <PlanCard
-                planKey="pro"
-                name={copy.proName}
-                price={9}
-                period="month"
-                feats={copy.proFeats}
-                bonusLine={copy.bonusLine}
-                bonusHighlight={
-                  copy.creditsKind === 'video'
-                    ? {
-                        extra: PLAN_VIDEO_CAPS.pro - PLAN_VIDEO_CAPS.monthly,
-                        sub: '3× the credits of Monthly — just $4 more',
-                      }
-                    : copy.creditsKind === 'video-editor'
-                    ? {
-                        extra: PLAN_EDITOR_CAPS.pro - PLAN_EDITOR_CAPS.monthly,
-                        sub: '3× the editor minutes of Monthly — just $4 more',
-                      }
-                    : null
-                }
-                copy={copy}
-                infoOpen={infoOpenPro}
-                setInfoOpen={setInfoOpenPro}
-                busy={busy}
-                onSubscribe={startCheckout}
-                isTrialing={isTrialing}
-                featured
-                btnClass={styles.btnAccent}
-                ctaPrefix={isTrialing ? 'Convert to Pro' : 'Subscribe'}
-              />
-            )}
+            <PlanCard
+              planKey="pro"
+              name={copy.proName}
+              price={9}
+              period="month"
+              feats={copy.proFeats}
+              bonusLine={copy.bonusLine}
+              bonusHighlight={
+                copy.creditsKind === 'video'
+                  ? {
+                      extra: PLAN_VIDEO_CAPS.pro - PLAN_VIDEO_CAPS.monthly,
+                      sub: '3× the credits of Monthly — just $4 more',
+                    }
+                  : copy.creditsKind === 'video-editor'
+                  ? {
+                      extra: PLAN_EDITOR_CAPS.pro - PLAN_EDITOR_CAPS.monthly,
+                      sub: '3× the credits of Monthly — just $4 more',
+                    }
+                  : null
+              }
+              copy={copy}
+              infoOpen={infoOpenPro}
+              setInfoOpen={setInfoOpenPro}
+              busy={busy}
+              onSubscribe={startCheckout}
+              isTrialing={isTrialing}
+              featured
+              btnClass={styles.btnAccent}
+              ctaPrefix={isTrialing ? 'Convert to Pro' : 'Subscribe'}
+            />
             <PlanCard
               planKey="yearly"
               name={copy.yearlyName}
               price={29}
               period="year"
               feats={copy.yearlyFeats}
-              bonusLine={copy.twoCard ? null : copy.bonusLine}
+              bonusLine={copy.bonusLine}
               bonusHighlight={
-                copy.twoCard
-                  ? null
-                  : copy.creditsKind === 'video'
+                copy.creditsKind === 'video'
                   ? {
                       extra: PLAN_VIDEO_CAPS.yearly - PLAN_VIDEO_CAPS.monthly,
                       sub: '5× the credits of Monthly — best annual value',
@@ -595,7 +592,7 @@ export default function Paywall({
                   : copy.creditsKind === 'video-editor'
                   ? {
                       extra: PLAN_EDITOR_CAPS.yearly - PLAN_EDITOR_CAPS.monthly,
-                      sub: '5× the editor minutes of Monthly — best annual value',
+                      sub: '5× the credits of Monthly — best annual value',
                     }
                   : null
               }
@@ -605,8 +602,7 @@ export default function Paywall({
               busy={busy}
               onSubscribe={startCheckout}
               isTrialing={isTrialing}
-              featured={copy.twoCard}
-              btnClass={copy.twoCard ? styles.btnAccent : styles.btnPrimary}
+              btnClass={styles.btnPrimary}
               ctaPrefix="Subscribe"
             />
           </div>
