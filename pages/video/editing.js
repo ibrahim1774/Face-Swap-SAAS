@@ -19,7 +19,24 @@ const PENDING_KEY = 've_pending_edit';
 const DEFAULT_TOGGLES = {
   removeFillers: true,
   removeSilences: true,
+  cleanAudio: true,
+  captions: false,
+  autoZoom: false,
+  transitions: false,
+  verticalReframe: false,
+  removeRetakes: false,
 };
+
+const FEATURE_LIST = [
+  { key: 'removeFillers',   label: 'Remove filler words',     sublabel: '"um", "uh", "er", "ah"' },
+  { key: 'removeSilences',  label: 'Trim long silences',      sublabel: 'Pauses over 0.5s' },
+  { key: 'cleanAudio',      label: 'Clean & level audio',     sublabel: 'EBU loudness norm' },
+  { key: 'removeRetakes',   label: 'Cut retakes & stumbles',  sublabel: 'Coming soon', soon: true },
+  { key: 'captions',        label: 'Burn-in captions',        sublabel: 'Coming soon', soon: true },
+  { key: 'autoZoom',        label: 'Auto-zoom on emphasis',   sublabel: 'Coming soon', soon: true },
+  { key: 'transitions',     label: 'AI scene transitions',    sublabel: 'Coming soon', soon: true },
+  { key: 'verticalReframe', label: 'Vertical 9:16 reframe',   sublabel: 'Coming soon', soon: true },
+];
 
 function hasEditorAccess(entitlement) {
   if (!entitlement) return false;
@@ -59,28 +76,29 @@ function probeVideo(file) {
   });
 }
 
-function ToggleRow({ label, sublabel, checked, onChange }) {
+function ToggleChip({ label, sublabel, checked, onChange, soon }) {
   return (
     <label
       style={{
         display: 'flex',
         alignItems: 'center',
-        gap: 12,
-        padding: '12px 14px',
-        borderRadius: 10,
-        border: '1px solid rgba(255,255,255,0.10)',
-        background: checked ? 'rgba(224, 196, 136, 0.05)' : 'rgba(255,255,255,0.02)',
+        gap: 8,
+        padding: '8px 10px',
+        borderRadius: 8,
+        border: `1px solid ${checked ? 'rgba(224, 196, 136, 0.4)' : 'rgba(255,255,255,0.10)'}`,
+        background: checked ? 'rgba(224, 196, 136, 0.06)' : 'rgba(255,255,255,0.02)',
         cursor: 'pointer',
         transition: 'background 120ms ease, border-color 120ms ease',
-        borderColor: checked ? 'rgba(224, 196, 136, 0.35)' : 'rgba(255,255,255,0.10)',
+        position: 'relative',
+        minWidth: 0,
       }}
     >
       <span
         aria-hidden
         style={{
-          width: 20,
-          height: 20,
-          borderRadius: 6,
+          width: 16,
+          height: 16,
+          borderRadius: 4,
           flexShrink: 0,
           border: `1.5px solid ${checked ? 'var(--gold, #e0c488)' : 'rgba(255,255,255,0.25)'}`,
           background: checked ? 'var(--gold, #e0c488)' : 'transparent',
@@ -88,7 +106,7 @@ function ToggleRow({ label, sublabel, checked, onChange }) {
           alignItems: 'center',
           justifyContent: 'center',
           color: '#0b0b0c',
-          fontSize: 13,
+          fontSize: 11,
           fontWeight: 800,
           lineHeight: 1,
         }}
@@ -96,11 +114,32 @@ function ToggleRow({ label, sublabel, checked, onChange }) {
         {checked ? '✓' : ''}
       </span>
       <span style={{ flex: 1, minWidth: 0 }}>
-        <span style={{ display: 'block', fontSize: 14, fontWeight: 600, color: '#ededed' }}>
+        <span
+          style={{
+            display: 'block',
+            fontSize: 12.5,
+            fontWeight: 600,
+            color: '#ededed',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
           {label}
         </span>
         {sublabel && (
-          <span style={{ display: 'block', fontSize: 12, color: '#9b978f', marginTop: 2 }}>
+          <span
+            style={{
+              display: 'block',
+              fontSize: 10.5,
+              color: soon ? 'var(--gold, #e0c488)' : '#9b978f',
+              marginTop: 1,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              opacity: soon ? 0.85 : 1,
+            }}
+          >
             {sublabel}
           </span>
         )}
@@ -584,210 +623,222 @@ export default function VideoEditingPage() {
         <title>Video Editor — Haelabs</title>
       </Head>
       <main className={styles.page}>
-        <header className={styles.header}>
-          <div>
-            <div className={styles.eyebrow}>◆ Video Editor</div>
-            <h1 className={styles.title}>Edit your video with AI</h1>
-          </div>
-          {step !== 'upload' && (
+        {step !== 'upload' && (
+          <header className={styles.header}>
+            <div>
+              <div className={styles.eyebrow}>◆ Video Editor</div>
+              <h1 className={styles.title}>Edit your video with AI</h1>
+            </div>
             <button type="button" onClick={handleStartOver} className={styles.downloadBtn}>
               Start over
             </button>
-          )}
-        </header>
+          </header>
+        )}
 
         {step === 'upload' && (
           <div className={styles.canvas}>
             <div
               style={{
                 maxWidth: 720,
-                margin: '0 auto 22px',
-                textAlign: 'center',
-                color: '#ededed',
+                margin: '0 auto',
+                padding: '18px 20px',
+                borderRadius: 14,
+                border: '1px solid rgba(255,255,255,0.08)',
+                background: 'rgba(255,255,255,0.015)',
               }}
             >
-              <div
-                style={{
-                  fontFamily: 'var(--font-mono, ui-monospace, monospace)',
-                  fontSize: 11,
-                  letterSpacing: '0.22em',
-                  textTransform: 'uppercase',
-                  color: 'var(--gold, #e0c488)',
-                  marginBottom: 10,
-                }}
-              >
-                ◆ AI Auto-Editor
-              </div>
-              <h2
-                style={{
-                  margin: 0,
-                  fontSize: 'clamp(26px, 4vw, 38px)',
-                  lineHeight: 1.1,
-                  fontWeight: 700,
-                  letterSpacing: '-0.01em',
-                }}
-              >
-                Cut the cruft. Keep the good stuff.
-              </h2>
-              <p
-                style={{
-                  margin: '14px auto 0',
-                  maxWidth: 580,
-                  fontSize: 'clamp(14px, 1.6vw, 16px)',
-                  lineHeight: 1.55,
-                  color: '#b8b6b1',
-                }}
-              >
-                Drop a long-form video. Pick what to clean up. Get a polished
-                cut back in minutes — no manual trimming required.
-              </p>
-            </div>
-
-            {pendingResume && !pendingResume.sourceUrl && (
-              <div
-                style={{
-                  maxWidth: 640,
-                  margin: '0 auto 14px',
-                  padding: '10px 14px',
-                  borderRadius: 10,
-                  border: '1px solid rgba(255,255,255,0.12)',
-                  background: 'rgba(255,255,255,0.02)',
-                  color: '#bbb',
-                  fontSize: 13,
-                  textAlign: 'center',
-                  lineHeight: 1.5,
-                }}
-              >
-                Welcome back — re-select <strong style={{ color: '#ededed' }}>{pendingResume.fileName}</strong> to continue where you left off.
-              </div>
-            )}
-
-            {pendingResume?.sourceUrl && (
-              <div
-                style={{
-                  maxWidth: 640,
-                  margin: '0 auto 14px',
-                  padding: '12px 16px',
-                  borderRadius: 10,
-                  border: '1px solid rgba(224, 196, 136, 0.3)',
-                  background: 'rgba(224, 196, 136, 0.06)',
-                  color: '#ededed',
-                  fontSize: 13,
-                  textAlign: 'center',
-                  lineHeight: 1.5,
-                }}
-              >
-                Welcome back — your video <strong>{pendingResume.fileName}</strong> is uploaded and ready. Starting analysis…
-              </div>
-            )}
-
-            <UploadZone
-              label="Upload a video to edit"
-              sublabel="MP4 / MOV · up to 1 GB"
-              icon="🎬"
-              accept="video/mp4,video/quicktime,video/*"
-              file={sourceFile}
-              onFileSelected={handleFilePicked}
-              onRemove={() => setSourceFile(null)}
-              maxSizeMB={1024}
-            />
-
-            {sourceFile && (
-              <div style={{ marginTop: 22, maxWidth: 640, marginInline: 'auto' }}>
+              <div style={{ textAlign: 'center', marginBottom: 14 }}>
                 <div
                   style={{
                     fontFamily: 'var(--font-mono, ui-monospace, monospace)',
-                    fontSize: 11,
+                    fontSize: 10,
+                    letterSpacing: '0.22em',
+                    textTransform: 'uppercase',
+                    color: 'var(--gold, #e0c488)',
+                    marginBottom: 6,
+                  }}
+                >
+                  ◆ AI Auto-Editor
+                </div>
+                <h2
+                  style={{
+                    margin: 0,
+                    fontSize: 'clamp(20px, 2.8vw, 26px)',
+                    lineHeight: 1.15,
+                    fontWeight: 700,
+                    letterSpacing: '-0.01em',
+                    color: '#ededed',
+                  }}
+                >
+                  Cut the cruft. Keep the good stuff.
+                </h2>
+                <p
+                  style={{
+                    margin: '6px auto 0',
+                    maxWidth: 520,
+                    fontSize: 13,
+                    lineHeight: 1.5,
+                    color: '#9b978f',
+                  }}
+                >
+                  Drop your video, check what to clean up, hit edit.
+                </p>
+              </div>
+
+              {pendingResume && !pendingResume.sourceUrl && (
+                <div
+                  style={{
+                    margin: '0 0 12px',
+                    padding: '8px 12px',
+                    borderRadius: 8,
+                    border: '1px solid rgba(255,255,255,0.10)',
+                    background: 'rgba(255,255,255,0.02)',
+                    color: '#bbb',
+                    fontSize: 12,
+                    textAlign: 'center',
+                    lineHeight: 1.4,
+                  }}
+                >
+                  Welcome back — re-select <strong style={{ color: '#ededed' }}>{pendingResume.fileName}</strong> to continue.
+                </div>
+              )}
+
+              {pendingResume?.sourceUrl && (
+                <div
+                  style={{
+                    margin: '0 0 12px',
+                    padding: '8px 12px',
+                    borderRadius: 8,
+                    border: '1px solid rgba(224, 196, 136, 0.3)',
+                    background: 'rgba(224, 196, 136, 0.06)',
+                    color: '#ededed',
+                    fontSize: 12,
+                    textAlign: 'center',
+                    lineHeight: 1.4,
+                  }}
+                >
+                  Welcome back — <strong>{pendingResume.fileName}</strong> uploaded. Starting analysis…
+                </div>
+              )}
+
+              <UploadZone
+                label="Drop a video to edit"
+                sublabel="MP4 / MOV · up to 1 GB"
+                icon="🎬"
+                accept="video/mp4,video/quicktime,video/*"
+                file={sourceFile}
+                onFileSelected={handleFilePicked}
+                onRemove={() => setSourceFile(null)}
+                maxSizeMB={1024}
+                compact
+              />
+
+              <div style={{ marginTop: 14 }}>
+                <div
+                  style={{
+                    fontFamily: 'var(--font-mono, ui-monospace, monospace)',
+                    fontSize: 10,
                     letterSpacing: '0.18em',
                     textTransform: 'uppercase',
                     color: '#9b978f',
-                    marginBottom: 10,
+                    marginBottom: 8,
                   }}
                 >
-                  Pick what to clean up
+                  What to do with your video
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <ToggleRow
-                    label="Remove filler words"
-                    sublabel='"um", "uh", "er", "ah" — auto-detected and cut'
-                    checked={toggles.removeFillers}
-                    onChange={(v) => setToggles((t) => ({ ...t, removeFillers: v }))}
-                  />
-                  <ToggleRow
-                    label="Trim long silences"
-                    sublabel="Pauses longer than 0.5s get tightened"
-                    checked={toggles.removeSilences}
-                    onChange={(v) => setToggles((t) => ({ ...t, removeSilences: v }))}
-                  />
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                    gap: 6,
+                  }}
+                >
+                  {FEATURE_LIST.map((f) => (
+                    <ToggleChip
+                      key={f.key}
+                      label={f.label}
+                      sublabel={f.sublabel}
+                      soon={f.soon}
+                      checked={!!toggles[f.key]}
+                      onChange={(v) => setToggles((t) => ({ ...t, [f.key]: v }))}
+                    />
+                  ))}
                 </div>
+              </div>
 
+              <div style={{ marginTop: 12 }}>
                 <label
                   htmlFor="ve-edit-description"
                   style={{
                     display: 'block',
                     fontFamily: 'var(--font-mono, ui-monospace, monospace)',
-                    fontSize: 11,
+                    fontSize: 10,
                     letterSpacing: '0.18em',
                     textTransform: 'uppercase',
                     color: '#9b978f',
-                    margin: '22px 0 8px',
+                    marginBottom: 6,
                   }}
                 >
                   Anything else? <span style={{ color: '#6b6b6b' }}>(optional)</span>
                 </label>
                 <textarea
                   id="ve-edit-description"
-                  rows={3}
+                  rows={2}
                   value={editDescription}
                   onChange={(e) => setEditDescription(e.target.value.slice(0, 600))}
                   maxLength={600}
-                  placeholder="e.g. Cut to under 5 minutes, keep the intro tight, prioritize the punchline at 4:30"
+                  placeholder="e.g. Cut to under 5 minutes, keep the punchline at 4:30, intro tight"
                   style={{
                     width: '100%',
-                    padding: '12px 14px',
-                    borderRadius: 10,
+                    padding: '9px 11px',
+                    borderRadius: 8,
                     border: '1px solid rgba(255,255,255,0.12)',
                     background: '#0f0f11',
                     color: '#ededed',
                     fontFamily: 'inherit',
-                    fontSize: 14,
-                    lineHeight: 1.5,
+                    fontSize: 13,
+                    lineHeight: 1.45,
                     resize: 'vertical',
                   }}
                 />
-                <button
-                  type="button"
-                  onClick={handleEditMyVideo}
-                  disabled={sourceUploading || !sourceFile}
-                  style={{
-                    marginTop: 16,
-                    width: '100%',
-                    padding: '14px 18px',
-                    borderRadius: 12,
-                    border: 'none',
-                    background: '#ededed',
-                    color: '#0b0b0c',
-                    fontFamily: 'inherit',
-                    fontSize: 15,
-                    fontWeight: 600,
-                    cursor: sourceUploading ? 'not-allowed' : 'pointer',
-                    opacity: sourceUploading ? 0.6 : 1,
-                    transition: 'opacity 120ms ease',
-                  }}
-                >
-                  {sourceUploading ? 'Uploading…' : 'Edit My Video →'}
-                </button>
-                {!authUser && (
-                  <p style={{ marginTop: 10, fontSize: 12, color: '#9b978f', textAlign: 'center' }}>
-                    You&rsquo;ll sign up on the next step. Your edit choices stay
-                    on this page until you come back.
-                  </p>
-                )}
               </div>
-            )}
 
-            {sourceUploading && <div className={styles.canvasMeta}>Uploading…</div>}
-            {renderError && <div className={styles.msgError}>{renderError}</div>}
+              <button
+                type="button"
+                onClick={handleEditMyVideo}
+                disabled={sourceUploading || !sourceFile}
+                style={{
+                  marginTop: 14,
+                  width: '100%',
+                  padding: '12px 16px',
+                  borderRadius: 10,
+                  border: 'none',
+                  background: !sourceFile ? 'rgba(237,237,237,0.18)' : '#ededed',
+                  color: !sourceFile ? 'rgba(11,11,12,0.5)' : '#0b0b0c',
+                  fontFamily: 'inherit',
+                  fontSize: 14,
+                  fontWeight: 700,
+                  cursor: sourceUploading || !sourceFile ? 'not-allowed' : 'pointer',
+                  opacity: sourceUploading ? 0.6 : 1,
+                  transition: 'opacity 120ms ease, background 120ms ease',
+                  letterSpacing: '0.01em',
+                }}
+              >
+                {sourceUploading
+                  ? 'Uploading…'
+                  : sourceFile
+                    ? 'Edit My Video Now →'
+                    : 'Drop a video to continue'}
+              </button>
+
+              {!authUser && sourceFile && (
+                <p style={{ marginTop: 8, fontSize: 11, color: '#9b978f', textAlign: 'center', lineHeight: 1.4 }}>
+                  Sign up on the next step — your edit choices stay saved.
+                </p>
+              )}
+
+              {renderError && <div className={styles.msgError} style={{ marginTop: 10 }}>{renderError}</div>}
+            </div>
           </div>
         )}
 
