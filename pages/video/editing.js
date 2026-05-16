@@ -81,10 +81,10 @@ function ToggleChip({ label, sublabel, checked, onChange, soon }) {
     <label
       style={{
         display: 'flex',
-        alignItems: 'center',
-        gap: 8,
-        padding: '8px 10px',
-        borderRadius: 8,
+        alignItems: 'flex-start',
+        gap: 10,
+        padding: '10px 12px',
+        borderRadius: 9,
         border: `1px solid ${checked ? 'rgba(224, 196, 136, 0.4)' : 'rgba(255,255,255,0.10)'}`,
         background: checked ? 'rgba(224, 196, 136, 0.06)' : 'rgba(255,255,255,0.02)',
         cursor: 'pointer',
@@ -100,6 +100,7 @@ function ToggleChip({ label, sublabel, checked, onChange, soon }) {
           height: 16,
           borderRadius: 4,
           flexShrink: 0,
+          marginTop: 1,
           border: `1.5px solid ${checked ? 'var(--gold, #e0c488)' : 'rgba(255,255,255,0.25)'}`,
           background: checked ? 'var(--gold, #e0c488)' : 'transparent',
           display: 'flex',
@@ -117,12 +118,11 @@ function ToggleChip({ label, sublabel, checked, onChange, soon }) {
         <span
           style={{
             display: 'block',
-            fontSize: 12.5,
+            fontSize: 13,
             fontWeight: 600,
             color: '#ededed',
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
+            lineHeight: 1.3,
+            wordBreak: 'break-word',
           }}
         >
           {label}
@@ -131,12 +131,11 @@ function ToggleChip({ label, sublabel, checked, onChange, soon }) {
           <span
             style={{
               display: 'block',
-              fontSize: 10.5,
+              fontSize: 11,
               color: soon ? 'var(--gold, #e0c488)' : '#9b978f',
-              marginTop: 1,
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
+              marginTop: 3,
+              lineHeight: 1.35,
+              wordBreak: 'break-word',
               opacity: soon ? 0.85 : 1,
             }}
           >
@@ -639,9 +638,9 @@ export default function VideoEditingPage() {
           <div className={styles.canvas}>
             <div
               style={{
-                maxWidth: 720,
+                maxWidth: 780,
                 margin: '0 auto',
-                padding: '18px 20px',
+                padding: '22px 24px',
                 borderRadius: 14,
                 border: '1px solid rgba(255,255,255,0.08)',
                 background: 'rgba(255,255,255,0.015)',
@@ -663,25 +662,26 @@ export default function VideoEditingPage() {
                 <h2
                   style={{
                     margin: 0,
-                    fontSize: 'clamp(20px, 2.8vw, 26px)',
+                    fontSize: 'clamp(22px, 3vw, 30px)',
                     lineHeight: 1.15,
                     fontWeight: 700,
                     letterSpacing: '-0.01em',
                     color: '#ededed',
                   }}
                 >
-                  Cut the cruft. Keep the good stuff.
+                  Stop wasting hours editing video.
                 </h2>
                 <p
                   style={{
-                    margin: '6px auto 0',
-                    maxWidth: 520,
-                    fontSize: 13,
+                    margin: '8px auto 0',
+                    maxWidth: 560,
+                    fontSize: 14,
                     lineHeight: 1.5,
-                    color: '#9b978f',
+                    color: '#b8b6b1',
                   }}
                 >
-                  Drop your video, check what to clean up, hit edit.
+                  Drop a raw recording. AI strips the ums, dead silences, and
+                  bad takes — you get a tight, publish-ready cut in minutes.
                 </p>
               </div>
 
@@ -730,7 +730,6 @@ export default function VideoEditingPage() {
                 onFileSelected={handleFilePicked}
                 onRemove={() => setSourceFile(null)}
                 maxSizeMB={1024}
-                compact
               />
 
               <div style={{ marginTop: 14 }}>
