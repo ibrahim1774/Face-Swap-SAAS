@@ -20,22 +20,12 @@ const DEFAULT_TOGGLES = {
   removeFillers: true,
   removeSilences: true,
   cleanAudio: true,
-  captions: false,
-  autoZoom: false,
-  transitions: false,
-  verticalReframe: false,
-  removeRetakes: false,
 };
 
 const FEATURE_LIST = [
-  { key: 'removeFillers',   label: 'Remove filler words',     sublabel: '"um", "uh", "er", "ah"' },
-  { key: 'removeSilences',  label: 'Trim long silences',      sublabel: 'Pauses over 0.5s' },
-  { key: 'cleanAudio',      label: 'Clean & level audio',     sublabel: 'EBU loudness norm' },
-  { key: 'removeRetakes',   label: 'Cut retakes & stumbles',  sublabel: 'Coming soon', soon: true },
-  { key: 'captions',        label: 'Burn-in captions',        sublabel: 'Coming soon', soon: true },
-  { key: 'autoZoom',        label: 'Auto-zoom on emphasis',   sublabel: 'Coming soon', soon: true },
-  { key: 'transitions',     label: 'AI scene transitions',    sublabel: 'Coming soon', soon: true },
-  { key: 'verticalReframe', label: 'Vertical 9:16 reframe',   sublabel: 'Coming soon', soon: true },
+  { key: 'removeFillers',  label: 'Remove filler words', sublabel: 'Cut "um", "uh", "er", "ah"' },
+  { key: 'removeSilences', label: 'Trim long silences',  sublabel: 'Tighten pauses over 0.5s' },
+  { key: 'cleanAudio',     label: 'Clean & level audio', sublabel: 'EBU R128 loudness norm' },
 ];
 
 function hasEditorAccess(entitlement) {
@@ -730,6 +720,7 @@ export default function VideoEditingPage() {
                 onFileSelected={handleFilePicked}
                 onRemove={() => setSourceFile(null)}
                 maxSizeMB={1024}
+                zoneStyle={{ padding: '22px 20px' }}
               />
 
               <div style={{ marginTop: 14 }}>
@@ -748,8 +739,8 @@ export default function VideoEditingPage() {
                 <div
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-                    gap: 6,
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                    gap: 8,
                   }}
                 >
                   {FEATURE_LIST.map((f) => (

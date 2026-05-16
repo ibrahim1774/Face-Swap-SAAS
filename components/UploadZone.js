@@ -23,6 +23,7 @@ export default function UploadZone({
   onRemove,
   maxSizeMB,
   compact = false,
+  zoneStyle,
 }) {
   const inputRef = useRef(null);
   const [dragOver, setDragOver] = useState(false);
@@ -88,7 +89,7 @@ export default function UploadZone({
   return (
     <div
       className={zoneClass}
-      style={compactZoneStyle}
+      style={{ ...compactZoneStyle, ...zoneStyle }}
       onClick={hasFile ? undefined : openPicker}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
