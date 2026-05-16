@@ -35,7 +35,6 @@ function requireEnv(name) {
 requireEnv('SUPABASE_URL');
 requireEnv('SUPABASE_SERVICE_ROLE_KEY');
 requireEnv('STRIPE_SECRET_KEY');
-requireEnv('BLOB_READ_WRITE_TOKEN');
 
 console.log('[worker] boot — polling every', POLL_INTERVAL_MS, 'ms');
 

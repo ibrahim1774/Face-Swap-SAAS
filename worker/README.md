@@ -36,11 +36,14 @@ Every 60s, scan `WHERE status='processing' AND started_at < now() - interval '20
 ## Secrets (set via `fly secrets set`)
 
 - `SUPABASE_URL`
-- `SUPABASE_SERVICE_ROLE_KEY`  (service role — full Storage + table access)
+- `SUPABASE_SERVICE_ROLE_KEY`  (service role — full Storage + table access; worker uses this for both render_jobs queue ops AND uploading output MP4s to the `editor-renders` bucket)
 - `STRIPE_SECRET_KEY`          (refund flow writes to customer metadata)
-- `BLOB_READ_WRITE_TOKEN`      (Vercel Blob token — pull from Vercel project envs; worker uploads finished renders to the same Blob store as the rest of the app)
 - `ASSEMBLYAI_API_KEY`         (Stage 3+ — transcription is currently fired from Vercel)
 - `ANTHROPIC_API_KEY`          (Stage 4 — chat-driven plan revisions run on the worker)
+
+Inputs are pulled from Vercel Blob via plain `fetch` (URLs are public,
+no auth needed). Outputs are written to Supabase Storage so the worker
+has exactly one cross-service credential to manage.
 
 ## Deploy
 
