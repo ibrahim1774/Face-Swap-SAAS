@@ -12,6 +12,7 @@ import { getBrowserSupabase } from '../../lib/supabase';
 import { bumpEntitlement } from '../../lib/entitlementBus';
 import { saveJob, loadJob, clearJob } from '../../lib/jobPersist';
 import { emptyPlan, effectiveDuration } from '../../lib/editPlan';
+import { deriveKeepIntervals, totalKeptSeconds } from '../../lib/cutPlan';
 
 const PENDING_KEY = 've_pending_edit';
 
@@ -334,6 +335,61 @@ export default function VideoEditingPage() {
     setStep('editing');
   };
 
+  // Render the auto-cut transcript decisions directly (skip the manual
+  // editor step). Derives keep-intervals from transcript + overrides
+  // and POSTs to the new render queue.
+  const handleRenderFromPreview = async () => {
+    if (!editPlan || !transcript) return;
+    const intervals = deriveKeepIntervals({
+      preview: transcript.preview,
+      overrides: transcriptOverrides,
+      sourceDurationSec: transcript.durationSec || editPlan.duration,
+    });
+    if (intervals.length === 0) {
+      setRenderError('Edit plan would produce an empty video. Keep at least one segment.');
+      return;
+    }
+    const submitPlan = {
+      ...editPlan,
+      sourceDurationSec: transcript.durationSec || editPlan.duration || 0,
+      keepIntervals: intervals,
+    };
+    setRenderError('');
+    setRenderProgress(0);
+    try {
+      const r = await fetch('/api/video/render', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ editPlan: submitPlan }),
+      });
+      const d = await r.json();
+      if (r.status === 402) {
+        setRenderError(
+          d.code === 'NO_PLAN'
+            ? 'No active plan — pick one to render.'
+            : `Out of editor credits (need ${d.cost}, you have ${d.remaining}). Top up to continue.`
+        );
+        if (d.code === 'NO_PLAN' || d.code === 'INSUFFICIENT') {
+          setStep('paywall');
+        }
+        return;
+      }
+      if (!r.ok) throw new Error(d.error || 'Render failed to start.');
+      saveJob(FEATURE, {
+        predictionId: d.renderId,
+        kind: 'video-edit',
+        editPlan: submitPlan,
+        chatHistory: [],
+      });
+      setEditPlan(submitPlan);
+      setRenderId(d.renderId);
+      setStep('rendering');
+      bumpEntitlement();
+    } catch (err) {
+      setRenderError(err.message || 'Render failed.');
+    }
+  };
+
   const handleRender = useCallback(async () => {
     if (!editPlan) return;
     setRenderError('');
@@ -643,6 +699,7 @@ export default function VideoEditingPage() {
                 alignItems: 'center',
                 gap: 12,
                 marginTop: 18,
+                flexWrap: 'wrap',
               }}
             >
               <button
@@ -652,14 +709,27 @@ export default function VideoEditingPage() {
               >
                 ← Start over
               </button>
-              <button
-                type="button"
-                onClick={handleContinueFromPreview}
-                className={styles.renderBtn}
-              >
-                Continue to editor →
-              </button>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                <button
+                  type="button"
+                  onClick={handleContinueFromPreview}
+                  className={styles.downloadBtn}
+                  title="Open the manual editor to tweak before rendering"
+                >
+                  Tweak in editor →
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRenderFromPreview}
+                  className={styles.renderBtn}
+                >
+                  {transcript?.durationSec
+                    ? `Render Final Video · ${Math.max(1, Math.ceil((transcript.durationSec / 60) * 30))} credits`
+                    : 'Render Final Video'}
+                </button>
+              </div>
             </div>
+            {renderError && <div className={styles.msgError} style={{ marginTop: 10 }}>{renderError}</div>}
           </div>
         )}
 

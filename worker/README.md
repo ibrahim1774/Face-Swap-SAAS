@@ -37,9 +37,10 @@ Every 60s, scan `WHERE status='processing' AND started_at < now() - interval '20
 
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`  (service role — full Storage + table access)
-- `ASSEMBLYAI_API_KEY`         (Stage 1+)
-- `ANTHROPIC_API_KEY`          (Stage 4 chat round-trips run on the worker for plan revisions)
 - `STRIPE_SECRET_KEY`          (refund flow writes to customer metadata)
+- `BLOB_READ_WRITE_TOKEN`      (Vercel Blob token — pull from Vercel project envs; worker uploads finished renders to the same Blob store as the rest of the app)
+- `ASSEMBLYAI_API_KEY`         (Stage 3+ — transcription is currently fired from Vercel)
+- `ANTHROPIC_API_KEY`          (Stage 4 — chat-driven plan revisions run on the worker)
 
 ## Deploy
 
