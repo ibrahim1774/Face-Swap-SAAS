@@ -6,6 +6,7 @@ import {
   resolveVideoEditorEntitlement,
 } from '../../../lib/videoEditorCredits';
 import { stripe } from '../../../lib/stripe';
+import { isAdminEmail } from '../../../lib/entitlement';
 
 export const config = {
   api: {
@@ -48,6 +49,9 @@ export default async function handler(req, res) {
   const session = await getUserFromRequest(req, res);
   if (!session) return res.status(401).json({ error: 'Authentication required.' });
 
+  const userEmail = session.user.email || '';
+  const isAdmin = isAdminEmail(userEmail);
+
   const { editPlan } = req.body || {};
   if (!editPlan || typeof editPlan !== 'object') {
     return res.status(400).json({ error: 'editPlan is required.' });
@@ -64,68 +68,74 @@ export default async function handler(req, res) {
   if (keepIntervals.length === 0) {
     return res.status(400).json({ error: 'editPlan.keepIntervals must include at least one segment.' });
   }
-  // Cap at 30 min source — matches the long-form editor's product
-  // promise. Larger inputs require a Stage 5 multi-machine queue and
-  // we want to fail fast rather than half-render.
-  if (sourceDurationSec > 30 * 60 + 30) {
+  // Cap at 30 min source for paid users — matches the long-form editor's
+  // product promise. Admins bypass this so we can test long videos.
+  if (!isAdmin && sourceDurationSec > 30 * 60 + 30) {
     return res.status(400).json({ error: 'Source video exceeds the 30-minute cap.' });
   }
 
-  // Find the customer + their plan.
+  // Admin shortcut: skip the Stripe customer lookup, credit reservation,
+  // and refund-on-failure plumbing entirely. Render row carries
+  // stripe_customer_id=null + cost_credits=0 so the worker's failure path
+  // skips its refund attempt cleanly (markFailed already guards on those).
+  let customerId = null;
+  let cost = 0;
   const admin = getSupabaseAdmin();
-  const { data: profile } = await admin
-    .from('profiles')
-    .select('stripe_customer_id')
-    .eq('id', session.user.id)
-    .maybeSingle();
-  const customerId = profile?.stripe_customer_id || null;
-  if (!customerId) {
-    return res.status(402).json({
-      error: 'No Stripe customer linked. Subscribe first.',
-      code: 'NO_PLAN',
-    });
-  }
 
-  // Pull plan name from customer metadata. resolveVideoEditorEntitlement
-  // applies the period rollover lazily — same pattern as
-  // /api/glow-up.
-  let plan = null;
-  try {
-    const customer = await stripe().customers.retrieve(customerId);
-    if (customer && !customer.deleted) {
-      plan = customer.metadata?.plan || null;
-    }
-  } catch (err) {
-    console.warn('[video/render] customer fetch failed', err.message);
-  }
-  await resolveVideoEditorEntitlement({ customerId, plan });
-
-  // Compute cost from source duration (NOT output duration). Mirrors
-  // every other tool that bills users — predictable cost, shown
-  // upfront on the preview screen.
-  const cost = costForEditorJob({ sourceSeconds: sourceDurationSec });
-
-  // Reserve credits BEFORE inserting the row so a failure here never
-  // leaves an orphan pending job.
-  try {
-    await reserveVideoEditorCredits({ customerId, plan, cost });
-  } catch (err) {
-    if (err.code === 'INSUFFICIENT') {
-      return res.status(402).json({
-        error: 'Out of video-editor credits. Top up to render.',
-        code: 'INSUFFICIENT',
-        remaining: err.remaining || 0,
-        cost,
-      });
-    }
-    if (err.code === 'NO_CUSTOMER') {
+  if (!isAdmin) {
+    const { data: profile } = await admin
+      .from('profiles')
+      .select('stripe_customer_id')
+      .eq('id', session.user.id)
+      .maybeSingle();
+    customerId = profile?.stripe_customer_id || null;
+    if (!customerId) {
       return res.status(402).json({
         error: 'No Stripe customer linked. Subscribe first.',
         code: 'NO_PLAN',
       });
     }
-    console.error('[video/render] reservation failed', err.message);
-    return res.status(500).json({ error: 'Could not reserve credits.' });
+
+    // Pull plan name from customer metadata. resolveVideoEditorEntitlement
+    // applies the period rollover lazily — same pattern as /api/glow-up.
+    let plan = null;
+    try {
+      const customer = await stripe().customers.retrieve(customerId);
+      if (customer && !customer.deleted) {
+        plan = customer.metadata?.plan || null;
+      }
+    } catch (err) {
+      console.warn('[video/render] customer fetch failed', err.message);
+    }
+    await resolveVideoEditorEntitlement({ customerId, plan });
+
+    // Compute cost from source duration (NOT output duration). Mirrors
+    // every other tool that bills users — predictable cost, shown
+    // upfront on the preview screen.
+    cost = costForEditorJob({ sourceSeconds: sourceDurationSec });
+
+    // Reserve credits BEFORE inserting the row so a failure here never
+    // leaves an orphan pending job.
+    try {
+      await reserveVideoEditorCredits({ customerId, plan, cost });
+    } catch (err) {
+      if (err.code === 'INSUFFICIENT') {
+        return res.status(402).json({
+          error: 'Out of video-editor credits. Top up to render.',
+          code: 'INSUFFICIENT',
+          remaining: err.remaining || 0,
+          cost,
+        });
+      }
+      if (err.code === 'NO_CUSTOMER') {
+        return res.status(402).json({
+          error: 'No Stripe customer linked. Subscribe first.',
+          code: 'NO_PLAN',
+        });
+      }
+      console.error('[video/render] reservation failed', err.message);
+      return res.status(500).json({ error: 'Could not reserve credits.' });
+    }
   }
 
   // Enqueue the render job.
@@ -143,8 +153,7 @@ export default async function handler(req, res) {
     height: Number(editPlan.height) || null,
   };
   if (sanitizedPlan.keepIntervals.length === 0) {
-    // Refund — we already reserved.
-    await refundVideoEditorCredits({ customerId, amount: cost });
+    if (!isAdmin) await refundVideoEditorCredits({ customerId, amount: cost });
     return res.status(400).json({ error: 'Edit plan contains no playable segments after sanitation.' });
   }
 
@@ -167,7 +176,7 @@ export default async function handler(req, res) {
     inserted = data;
   } catch (err) {
     console.error('[video/render] enqueue failed', err.message);
-    await refundVideoEditorCredits({ customerId, amount: cost });
+    if (!isAdmin) await refundVideoEditorCredits({ customerId, amount: cost });
     return res.status(500).json({ error: 'Could not enqueue render.' });
   }
 
