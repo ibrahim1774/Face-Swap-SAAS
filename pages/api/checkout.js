@@ -196,9 +196,9 @@ export default async function handler(req, res) {
       });
     }
 
-    if (plan !== 'monthly' && plan !== 'yearly') {
+    if (plan !== 'monthly' && plan !== 'pro' && plan !== 'yearly') {
       return res.status(400).json({
-        error: "Expected { plan: 'monthly'|'yearly' } or { mode: 'topup', pack: 's'|'m'|'l' }.",
+        error: "Expected { plan: 'monthly'|'pro'|'yearly' } or { mode: 'topup', pack: 's'|'m'|'l' }.",
       });
     }
 
@@ -220,7 +220,7 @@ export default async function handler(req, res) {
     // Surface picks the per-surface Product variant so the checkout
     // page header shows the right name ("Glow Up Yearly Plan",
     // "AI Interior Yearly Plan", etc). Same price, same entitlement.
-    const ALLOWED_SURFACES = new Set(['default', 'glow-up', 'interior-design']);
+    const ALLOWED_SURFACES = new Set(['default', 'glow-up', 'interior-design', 'video-editor']);
     const safeSurface = ALLOWED_SURFACES.has(surface) ? surface : 'default';
     const price = await getOrCreatePrice(plan, safeSurface);
 
