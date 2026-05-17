@@ -995,6 +995,23 @@ export default function UgcPage() {
           >
             Turn Your Image Into a Talking, Moving Video
           </h1>
+          {canUsePromptGenerator && (
+            <p
+              style={{
+                fontSize: 12,
+                lineHeight: 1.5,
+                margin: '10px auto 0',
+                maxWidth: 560,
+                color: 'rgba(255,255,255,0.55)',
+                fontFamily: 'var(--font-mono, ui-monospace, monospace)',
+                letterSpacing: '0.01em',
+              }}
+            >
+              ◆ Please don&rsquo;t use this for NSFW content or anything
+              involving minors — the AI flags and rejects that. Best for
+              business promos, roasting friends, and general fun use.
+            </p>
+          )}
         </div>
 
         <form onSubmit={handleAnimate} className={styles.ugcCard}>
