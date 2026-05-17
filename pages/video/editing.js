@@ -350,35 +350,16 @@ export default function VideoEditingPage() {
     try { sessionStorage.removeItem(PENDING_KEY); } catch {}
   }, [editDescription, toggles]);
 
-  // "Edit My Video" CTA. Routes by auth + entitlement state:
-  //   anon              → save metadata only, redirect to /sign-up
-  //                       (no Blob upload yet — avoids junk from bouncers)
-  //   authed, no plan   → upload to Blob, save full state, show paywall
-  //                       so after payment we auto-resume
-  //   authed, has plan  → upload + transcribe immediately
+  // "Edit My Video" CTA. Single flow regardless of auth state:
+  //   1. Upload to Blob (so the file persists across navigation)
+  //   2. Persist URL + meta + toggles to sessionStorage
+  //   3. Route:
+  //        anon            → /sign-up?returnTo=/video/editing
+  //        authed, no plan → paywall (auto-resume handles post-pay)
+  //        authed, has plan → straight into transcription
   const handleEditMyVideo = async () => {
     if (!sourceFile) {
       setRenderError('Pick a video first.');
-      return;
-    }
-
-    // Anon: just save what we have, send to sign-up. The user re-picks
-    // their file after auth — keeps Blob clean of abandoned uploads.
-    if (authLoaded && !authUser) {
-      try {
-        sessionStorage.setItem(
-          PENDING_KEY,
-          JSON.stringify({
-            editDescription,
-            fileName: sourceFile.name,
-            toggles,
-          })
-        );
-      } catch {
-        // sessionStorage may be unavailable in private mode
-      }
-      const returnTo = encodeURIComponent('/video/editing');
-      router.push(`/sign-up?returnTo=${returnTo}`);
       return;
     }
 
@@ -388,24 +369,36 @@ export default function VideoEditingPage() {
       const meta = await probeVideo(sourceFile);
       const url = await uploadTempFile(sourceFile);
 
-      // Authed but no plan: persist everything so the post-payment
-      // landing can auto-resume to transcription without re-uploading.
+      try {
+        sessionStorage.setItem(
+          PENDING_KEY,
+          JSON.stringify({
+            editDescription,
+            fileName: sourceFile.name,
+            toggles,
+            sourceUrl: url,
+            sourceDurationSec: meta.duration,
+            sourceWidth: meta.width || 1080,
+            sourceHeight: meta.height || 1920,
+          })
+        );
+      } catch {
+        // sessionStorage may be unavailable in private mode
+      }
+
+      // Anon: continue the flow on the sign-up page. After auth, the
+      // user lands back here and the auto-resume effect picks up the
+      // Blob URL from sessionStorage.
+      if (authLoaded && !authUser) {
+        autoAdvancedRef.current = true;
+        const returnTo = encodeURIComponent('/video/editing');
+        router.push(`/sign-up?returnTo=${returnTo}`);
+        return;
+      }
+
+      // Authed but no plan: jump straight to paywall.
       if (authUser && !hasEditorAccess(entitlement)) {
-        try {
-          sessionStorage.setItem(
-            PENDING_KEY,
-            JSON.stringify({
-              editDescription,
-              fileName: sourceFile.name,
-              toggles,
-              sourceUrl: url,
-              sourceDurationSec: meta.duration,
-              sourceWidth: meta.width || 1080,
-              sourceHeight: meta.height || 1920,
-            })
-          );
-        } catch {}
-        autoAdvancedRef.current = true; // we'll handle resume manually
+        autoAdvancedRef.current = true;
         setStep('paywall');
         setSourceUploading(false);
         return;
@@ -426,23 +419,29 @@ export default function VideoEditingPage() {
     }
   };
 
-  // Post-payment auto-resume. When the user returns from Stripe with
-  // a valid plan AND we have a sourceUrl in sessionStorage from the
-  // pre-paywall upload, kick off transcription so they don't have to
-  // re-upload or re-click anything.
+  // After-sign-up + after-payment auto-resume. Single effect that
+  // routes the user based on what state they came back in:
+  //   - authed + plan + sourceUrl saved → kick off transcription
+  //   - authed + no plan + sourceUrl saved → show paywall
+  //   - everything else → stay on upload step
   useEffect(() => {
     if (autoAdvancedRef.current) return;
     if (!authUser || !entitlement) return;
-    if (!hasEditorAccess(entitlement)) return;
     if (step !== 'upload') return;
     if (!pendingResume?.sourceUrl) return;
-    autoAdvancedRef.current = true;
-    startTranscription({
-      sourceUrl: pendingResume.sourceUrl,
-      duration: pendingResume.sourceDurationSec || 0,
-      width: pendingResume.sourceWidth,
-      height: pendingResume.sourceHeight,
-    });
+
+    if (hasEditorAccess(entitlement)) {
+      autoAdvancedRef.current = true;
+      startTranscription({
+        sourceUrl: pendingResume.sourceUrl,
+        duration: pendingResume.sourceDurationSec || 0,
+        width: pendingResume.sourceWidth,
+        height: pendingResume.sourceHeight,
+      });
+    } else {
+      autoAdvancedRef.current = true;
+      setStep('paywall');
+    }
   }, [authUser, entitlement, pendingResume, step, startTranscription]);
 
   // Poll transcript-status while a job is in flight. Completes the
