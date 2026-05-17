@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { claimNext, markDone, markFailed, scanWatchdog } from './jobs.js';
 import { downloadToTmp, uploadOutput, cleanupTmp } from './storage.js';
 import { render } from './render.js';
+import { writeAssFile, getStylePreset } from './subtitles.js';
 
 /*
  * Long-form video editor — Fly worker main loop.
@@ -45,6 +46,7 @@ async function processOne() {
   processing = true;
   let inputPath = null;
   let outputPath = null;
+  let subtitlePath = null;
   let job = null;
   try {
     job = await claimNext();
@@ -60,11 +62,30 @@ async function processOne() {
     inputPath = await downloadToTmp(job.source_url, `job-${job.id}-source.mp4`);
     outputPath = join(tmpdir(), 'haelabs-render', `job-${job.id}-out.mp4`);
 
+    // 1b. Optional: generate the ASS subtitle file when the caller
+    // requested a style + provided word timings. Silently skips when
+    // either is absent so existing render flows are unaffected.
+    const styleKey = typeof plan.subtitleStyle === 'string' ? plan.subtitleStyle : '';
+    const words = Array.isArray(plan.transcriptWords) ? plan.transcriptWords : null;
+    const style = styleKey && styleKey !== 'none' ? getStylePreset(styleKey) : null;
+    if (style && words && words.length > 0) {
+      subtitlePath = await writeAssFile({
+        words,
+        keepIntervalsSec: keepIntervals,
+        style,
+        videoWidth: Number(plan.width) || 1080,
+        videoHeight: Number(plan.height) || 1920,
+        jobId: job.id,
+      });
+      console.log(`[worker] job ${job.id} captions: ${styleKey} (${words.length} words)`);
+    }
+
     // 2. Render. onProgress is purely advisory for now.
     await render({
       inputPath,
       outputPath,
       keepIntervals,
+      subtitlePath,
       onProgress: (s) => {
         if (Math.floor(s) % 30 === 0) {
           console.log(`[worker] job ${job.id} progress`, Math.floor(s), 'sec rendered');
@@ -92,7 +113,7 @@ async function processOne() {
       console.error('[worker] poll failed (no job claimed)', err.message);
     }
   } finally {
-    await cleanupTmp(inputPath, outputPath);
+    await cleanupTmp(inputPath, outputPath, subtitlePath);
     processing = false;
   }
 }

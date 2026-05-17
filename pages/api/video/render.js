@@ -139,6 +139,25 @@ export default async function handler(req, res) {
   }
 
   // Enqueue the render job.
+  // Optional subtitle inputs — only kept when both style + words are
+  // present so the worker can fall back to caption-less render.
+  const ALLOWED_STYLES = new Set(['none', 'clean', 'bold', 'block']);
+  const subtitleStyle = ALLOWED_STYLES.has(editPlan.subtitleStyle)
+    ? editPlan.subtitleStyle
+    : 'none';
+  const rawWords = Array.isArray(editPlan.transcriptWords) ? editPlan.transcriptWords : [];
+  // Trim word objects to {text,start,end} only — keeps the render_jobs
+  // row payload bounded for long transcripts.
+  const transcriptWords = subtitleStyle !== 'none'
+    ? rawWords
+        .map((w) => ({
+          text: typeof w.text === 'string' ? w.text.slice(0, 80) : '',
+          start: Number(w.start) || 0,
+          end: Number(w.end) || 0,
+        }))
+        .filter((w) => w.text && w.end > w.start)
+    : [];
+
   const sanitizedPlan = {
     sourceUrl,
     sourceDurationSec,
@@ -151,6 +170,8 @@ export default async function handler(req, res) {
     userPrompt: typeof editPlan.userPrompt === 'string' ? editPlan.userPrompt.slice(0, 600) : '',
     width: Number(editPlan.width) || null,
     height: Number(editPlan.height) || null,
+    subtitleStyle,
+    transcriptWords,
   };
   if (sanitizedPlan.keepIntervals.length === 0) {
     if (!isAdmin) await refundVideoEditorCredits({ customerId, amount: cost });

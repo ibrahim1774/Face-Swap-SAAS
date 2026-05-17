@@ -28,6 +28,13 @@ const FEATURE_LIST = [
   { key: 'cleanAudio',     label: 'Clean & level audio', sublabel: 'EBU R128 loudness norm' },
 ];
 
+const SUBTITLE_STYLES = [
+  { key: 'none',  label: 'No captions',   sublabel: 'Skip subtitle burn-in' },
+  { key: 'clean', label: 'Clean',         sublabel: 'White text · thin outline · classic' },
+  { key: 'bold',  label: 'Bold (yellow)', sublabel: 'Big yellow text · thick outline · MrBeast vibe' },
+  { key: 'block', label: 'Block',         sublabel: 'White text on solid black box · podcast' },
+];
+
 function hasEditorAccess(entitlement) {
   if (!entitlement) return false;
   if (entitlement.isAdmin) return true;
@@ -157,6 +164,7 @@ export default function VideoEditingPage() {
   const [chatHistory, setChatHistory] = useState([]);
   const [editDescription, setEditDescription] = useState('');
   const [toggles, setToggles] = useState(DEFAULT_TOGGLES);
+  const [subtitleStyle, setSubtitleStyle] = useState('none');
   const [entitlement, setEntitlement] = useState(null);
   const [pendingResume, setPendingResume] = useState(null);
   const autoAdvancedRef = useRef(false);
@@ -209,6 +217,9 @@ export default function VideoEditingPage() {
       }
       if (saved && saved.toggles && typeof saved.toggles === 'object') {
         setToggles({ ...DEFAULT_TOGGLES, ...saved.toggles });
+      }
+      if (saved && typeof saved.subtitleStyle === 'string') {
+        setSubtitleStyle(saved.subtitleStyle);
       }
       if (saved && saved.fileName) {
         setPendingResume({
@@ -396,6 +407,7 @@ export default function VideoEditingPage() {
             editDescription,
             fileName: sourceFile.name,
             toggles,
+            subtitleStyle,
             sourceUrl: url,
             sourceDurationSec: meta.duration,
             sourceWidth: meta.width || 1080,
@@ -521,10 +533,18 @@ export default function VideoEditingPage() {
       setRenderError('Edit plan would produce an empty video. Keep at least one segment.');
       return;
     }
+    // When the user picked a caption style, ship the AssemblyAI words
+    // along so the worker can build the ASS subtitle file. Trimmed to
+    // just {text,start,end} to keep the render_jobs payload bounded.
+    const wordsForSubs = subtitleStyle !== 'none' && Array.isArray(transcript?.preview?.words)
+      ? transcript.preview.words.map((w) => ({ text: w.text, start: w.start, end: w.end }))
+      : [];
     const submitPlan = {
       ...editPlan,
       sourceDurationSec: transcript.durationSec || editPlan.duration || 0,
       keepIntervals: intervals,
+      subtitleStyle,
+      transcriptWords: wordsForSubs,
     };
     setRenderError('');
     setRenderProgress(0);
@@ -608,6 +628,7 @@ export default function VideoEditingPage() {
     setTranscriptStatus('idle');
     setEditDescription('');
     setToggles(DEFAULT_TOGGLES);
+    setSubtitleStyle('none');
     setPendingResume(null);
     autoAdvancedRef.current = true; // suppress auto-resume after a manual reset
     try { sessionStorage.removeItem(PENDING_KEY); } catch {}
@@ -770,6 +791,38 @@ export default function VideoEditingPage() {
                       soon={f.soon}
                       checked={!!toggles[f.key]}
                       onChange={(v) => setToggles((t) => ({ ...t, [f.key]: v }))}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ marginTop: 12 }}>
+                <div
+                  style={{
+                    fontFamily: 'var(--font-mono, ui-monospace, monospace)',
+                    fontSize: 10,
+                    letterSpacing: '0.18em',
+                    textTransform: 'uppercase',
+                    color: '#9b978f',
+                    marginBottom: 8,
+                  }}
+                >
+                  Caption style
+                </div>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
+                    gap: 6,
+                  }}
+                >
+                  {SUBTITLE_STYLES.map((s) => (
+                    <ToggleChip
+                      key={s.key}
+                      label={s.label}
+                      sublabel={s.sublabel}
+                      checked={subtitleStyle === s.key}
+                      onChange={() => setSubtitleStyle(s.key)}
                     />
                   ))}
                 </div>

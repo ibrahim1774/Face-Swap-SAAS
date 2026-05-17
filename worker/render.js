@@ -46,14 +46,21 @@ function buildBetweenExpr(intervals) {
     .join('+');
 }
 
-export function buildFfmpegArgs({ inputPath, outputPath, keepIntervals }) {
+export function buildFfmpegArgs({ inputPath, outputPath, keepIntervals, subtitlePath }) {
   const expr = buildBetweenExpr(keepIntervals);
-  const videoFilter = `select='${expr}',setpts=N/FRAME_RATE/TB`;
+  // Subtitles are burned in AFTER the cut+retime so the ASS timings
+  // (already in output-time) align with the rendered frames.
+  // FFmpeg's `subtitles=` filter expects a path; we escape the colon
+  // and backslash so paths like /tmp/foo work cross-platform.
+  const escapePath = (p) => p.replace(/\\/g, '\\\\').replace(/:/g, '\\:');
+  const videoChain = subtitlePath
+    ? `select='${expr}',setpts=N/FRAME_RATE/TB,subtitles='${escapePath(subtitlePath)}'`
+    : `select='${expr}',setpts=N/FRAME_RATE/TB`;
   const audioFilter = `aselect='${expr}',asetpts=N/SR/TB,loudnorm=I=-16:TP=-1.5:LRA=11`;
   return [
     '-y',
     '-i', inputPath,
-    '-vf', videoFilter,
+    '-vf', videoChain,
     '-af', audioFilter,
     '-c:v', 'libx264',
     '-preset', 'fast',
@@ -92,7 +99,7 @@ export function runFfmpeg(args, { onProgress } = {}) {
   });
 }
 
-export async function render({ inputPath, outputPath, keepIntervals, onProgress }) {
-  const args = buildFfmpegArgs({ inputPath, outputPath, keepIntervals });
+export async function render({ inputPath, outputPath, keepIntervals, subtitlePath, onProgress }) {
+  const args = buildFfmpegArgs({ inputPath, outputPath, keepIntervals, subtitlePath });
   await runFfmpeg(args, { onProgress });
 }
