@@ -4,7 +4,6 @@ import { useRouter } from 'next/router';
 
 import styles from '../../styles/Editor.module.css';
 import UploadZone from '../../components/UploadZone';
-import AIChatPanel from '../../components/editor/AIChatPanel';
 import Paywall from '../../components/Paywall';
 import TranscriptPreview from '../../components/editor/TranscriptPreview';
 import { uploadTempFile } from '../../lib/uploader';
@@ -797,35 +796,49 @@ export default function VideoEditingPage() {
               </div>
 
               <div style={{ marginTop: 12 }}>
-                <div
+                <label
+                  htmlFor="ve-caption-style"
                   style={{
+                    display: 'block',
                     fontFamily: 'var(--font-mono, ui-monospace, monospace)',
                     fontSize: 10,
                     letterSpacing: '0.18em',
                     textTransform: 'uppercase',
                     color: '#9b978f',
-                    marginBottom: 8,
+                    marginBottom: 6,
                   }}
                 >
                   Caption style
-                </div>
-                <div
+                </label>
+                <select
+                  id="ve-caption-style"
+                  value={subtitleStyle}
+                  onChange={(e) => setSubtitleStyle(e.target.value)}
                   style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
-                    gap: 6,
+                    width: '100%',
+                    padding: '9px 11px',
+                    borderRadius: 8,
+                    border: '1px solid rgba(255,255,255,0.12)',
+                    background: '#0f0f11',
+                    color: '#ededed',
+                    fontFamily: 'inherit',
+                    fontSize: 13,
+                    lineHeight: 1.45,
+                    appearance: 'none',
+                    cursor: 'pointer',
+                    backgroundImage:
+                      'url("data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'10\' height=\'6\' viewBox=\'0 0 10 6\'><path fill=\'%239b978f\' d=\'M0 0l5 6 5-6z\'/></svg>")',
+                    backgroundRepeat: 'no-repeat',
+                    backgroundPosition: 'right 12px center',
+                    paddingRight: 30,
                   }}
                 >
                   {SUBTITLE_STYLES.map((s) => (
-                    <ToggleChip
-                      key={s.key}
-                      label={s.label}
-                      sublabel={s.sublabel}
-                      checked={subtitleStyle === s.key}
-                      onChange={() => setSubtitleStyle(s.key)}
-                    />
+                    <option key={s.key} value={s.key} style={{ background: '#0f0f11' }}>
+                      {s.label} — {s.sublabel}
+                    </option>
                   ))}
-                </div>
+                </select>
               </div>
 
               <div style={{ marginTop: 12 }}>
@@ -1088,12 +1101,6 @@ export default function VideoEditingPage() {
               )}
             </div>
 
-            <AIChatPanel
-              editPlan={editPlan}
-              setEditPlan={setEditPlan}
-              chatHistory={chatHistory}
-              setChatHistory={setChatHistory}
-            />
           </div>
         )}
       </main>
