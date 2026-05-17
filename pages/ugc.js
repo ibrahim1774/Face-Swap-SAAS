@@ -994,7 +994,7 @@ export default function UgcPage() {
             className={styles.headline}
             style={{ fontSize: 'clamp(18px, 2.6vw, 26px)', margin: '4px 0', lineHeight: 1.2 }}
           >
-            Turn your photo into a video?
+            Turn your photo into a video
           </h1>
           <p
             className={styles.subtitle}
