@@ -276,6 +276,26 @@ export default function VideoEditingPage() {
         setRenderProgress(d.progress || 0);
         if (d.status === 'completed' && d.outputUrl) {
           setRenderResult({ outputUrl: d.outputUrl });
+          // Re-base the edit plan onto the rendered output so subsequent
+          // chat turns ("trim the last second") operate on the *new*
+          // shorter video, not the original 12s source. Clears applied
+          // intervals/ops since they're now baked into outputUrl.
+          setEditPlan((prev) => {
+            if (!prev) return prev;
+            const appliedIntervals = Array.isArray(prev.keepIntervals) ? prev.keepIntervals : [];
+            const newDuration =
+              appliedIntervals.length > 0
+                ? totalKeptSeconds(appliedIntervals)
+                : effectiveDuration(prev) || prev.duration || 0;
+            return {
+              ...prev,
+              sourceUrl: d.outputUrl,
+              duration: newDuration,
+              sourceDurationSec: newDuration,
+              keepIntervals: [],
+              operations: [],
+            };
+          });
           setStep('done');
           clearJob(FEATURE);
           bumpEntitlement();
