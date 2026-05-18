@@ -5,7 +5,6 @@ import { claimNext, markDone, markFailed, scanWatchdog } from './jobs.js';
 import { downloadToTmp, uploadOutput, cleanupTmp } from './storage.js';
 import { render } from './render.js';
 import { writeAssFile, getStylePreset } from './subtitles.js';
-import { screenVideoSource, BlockedNSFWError } from './moderation.js';
 
 /*
  * Long-form video editor — Fly worker main loop.
@@ -62,30 +61,6 @@ async function processOne() {
     // 1. Pull source.
     inputPath = await downloadToTmp(job.source_url, `job-${job.id}-source.mp4`);
     outputPath = join(tmpdir(), 'haelabs-render', `job-${job.id}-out.mp4`);
-
-    // 1a. Pre-render moderation: extract one keyframe at ~5s and run
-    // it through Claude Haiku vision. Block sexual / minor content
-    // before we waste compute on a full single-pass render. Cached on
-    // the moderation_results table keyed by source_url so repeat
-    // submissions of the same file short-circuit.
-    try {
-      await screenVideoSource({
-        inputPath,
-        sourceUrl: job.source_url,
-        durationSec: Number(job.source_seconds) || 0,
-        jobId: job.id,
-      });
-    } catch (err) {
-      if (err instanceof BlockedNSFWError) {
-        console.warn(`[worker] job ${job.id} blocked by moderation (${err.category})`);
-        await markFailed(job.id, {
-          code: 'BLOCKED_NSFW',
-          message: err.message,
-        });
-        return; // finally{} still runs cleanup
-      }
-      throw err;
-    }
 
     // 1b. Optional: generate the ASS subtitle file when the caller
     // requested a style + provided word timings. Silently skips when
