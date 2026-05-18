@@ -3,6 +3,7 @@ import { getUserFromRequest } from '../../lib/supabaseServer';
 import { getEntitlement, reserveCredits, refundCredits } from '../../lib/entitlement';
 import { sendCapiEvent } from '../../lib/meta';
 import { nsEventId } from '../../lib/metaKeys';
+import { screenText, ModerationError, moderationErrorResponse } from '../../lib/moderation';
 
 const COST = 1;
 
@@ -25,6 +26,15 @@ export default async function handler(req, res) {
   const { prompt } = req.body || {};
   if (typeof prompt !== 'string' || !prompt.trim()) {
     return res.status(400).json({ error: 'prompt is required.' });
+  }
+
+  // Pre-filter prompt before charging credits.
+  try {
+    await screenText(prompt);
+  } catch (err) {
+    if (err instanceof ModerationError) return moderationErrorResponse(res, err);
+    console.error('[ugc-image] moderation threw', err);
+    return res.status(500).json({ error: 'Moderation check failed.' });
   }
 
   try {

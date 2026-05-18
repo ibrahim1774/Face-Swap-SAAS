@@ -5,6 +5,7 @@ import { getEntitlement, reserveCredits, refundCredits, trackPendingJob } from '
 import { sendCapiEvent } from '../../lib/meta';
 import { nsEventId } from '../../lib/metaKeys';
 import { costForGeneration, MODELS, RESOLUTIONS } from '../../lib/cost';
+import { screenText, screenImage, ModerationError, moderationErrorResponse } from '../../lib/moderation';
 
 function isHttpUrl(value) {
   if (typeof value !== 'string') return false;
@@ -54,6 +55,16 @@ export default async function handler(req, res) {
   const wantAudio = Boolean(audio);
   const dur = clampDuration(duration);
   const cost = costForGeneration({ seconds: dur, model, resolution, audio: wantAudio });
+
+  // Pre-filter prompt + image before charging credits.
+  try {
+    if (prompt) await screenText(prompt);
+    await screenImage(imageUrl);
+  } catch (err) {
+    if (err instanceof ModerationError) return moderationErrorResponse(res, err);
+    console.error('[image-to-video] moderation threw', err);
+    return res.status(500).json({ error: 'Moderation check failed.' });
+  }
 
   try {
     await reserveCredits(entitlement, cost);

@@ -8,6 +8,7 @@ import { getEntitlement, reserveCredits, refundCredits, trackPendingJob } from '
 import { sendCapiEvent } from '../../lib/meta';
 import { nsEventId } from '../../lib/metaKeys';
 import { costForGeneration, MODELS, RESOLUTIONS } from '../../lib/cost';
+import { screenText, screenImage, ModerationError, moderationErrorResponse } from '../../lib/moderation';
 
 function isHttpUrl(value) {
   if (typeof value !== 'string') return false;
@@ -75,6 +76,22 @@ export default async function handler(req, res) {
     totalSeconds = normalizedScenes.reduce((a, s) => a + s.duration, 0);
   } else {
     totalSeconds = clampDuration(duration);
+  }
+
+  // Content moderation: pre-filter prompts + image BEFORE charging.
+  // Fail-closed for any thrown ModerationError; fail-open for transient
+  // classifier errors (logged in lib/moderation.js).
+  try {
+    const textsToScreen = [
+      script || '',
+      ...(normalizedScenes ? normalizedScenes.map((s) => s.prompt) : []),
+    ];
+    await screenText(textsToScreen);
+    await screenImage(imageUrl);
+  } catch (err) {
+    if (err instanceof ModerationError) return moderationErrorResponse(res, err);
+    console.error('[ugc-animate] moderation threw', err);
+    return res.status(500).json({ error: 'Moderation check failed.' });
   }
 
   const cost = costForGeneration({

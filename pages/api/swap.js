@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { createJob, updateJob } from '../../lib/jobs';
 import { createMotionTransferPrediction, normalizeStatus } from '../../lib/replicate';
 import { getUserFromRequest } from '../../lib/supabaseServer';
+import { screenImage, ModerationError, moderationErrorResponse } from '../../lib/moderation';
 
 function isHttpUrl(value) {
   if (typeof value !== 'string') return false;
@@ -42,6 +43,16 @@ export default async function handler(req, res) {
       return res.status(400).json({
         error: 'imageUrl (character image) and videoUrl (motion video) are required.',
       });
+    }
+
+    // Moderate the face image. videoUrl is a motion clip — we trust
+    // those (face-swap doesn't surface the source video to the output).
+    try {
+      await screenImage(imageUrl);
+    } catch (err) {
+      if (err instanceof ModerationError) return moderationErrorResponse(res, err);
+      console.error('[swap] moderation threw', err);
+      return res.status(500).json({ error: 'Moderation check failed.' });
     }
 
     const safeMode = mode === 'pro' ? 'pro' : 'std';

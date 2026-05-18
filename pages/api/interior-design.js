@@ -4,6 +4,7 @@ import { getUserFromRequest, getSupabaseAdmin } from '../../lib/supabaseServer';
 import { stripe } from '../../lib/stripe';
 import { sendCapiEvent } from '../../lib/meta';
 import { KEY, nsEventId } from '../../lib/metaKeys';
+import { screenText, screenImage, ModerationError, moderationErrorResponse } from '../../lib/moderation';
 
 /*
  * AI Interior Design generation endpoint.
@@ -240,6 +241,18 @@ export default async function handler(req, res) {
     budgetFeel === 'luxury' || budgetFeel === 'mid-range' || budgetFeel === 'budget-friendly'
       ? budgetFeel
       : 'mid-range';
+
+  // Content moderation BEFORE credit gate. Even though interior-design
+  // is room-only (no people), users can still upload a person's photo
+  // and try to bypass — screen here so we don't pass NSFW upstream.
+  try {
+    if (userPrompt) await screenText(userPrompt);
+    await screenImage(imageUrl);
+  } catch (err) {
+    if (err instanceof ModerationError) return moderationErrorResponse(res, err);
+    console.error('[interior-design] moderation threw', err);
+    return res.status(500).json({ error: 'Moderation check failed.' });
+  }
 
   if (!isAdmin && (entitlement.tier === 'none' || !entitlement.activeSub)) {
     return res.status(402).json({ error: 'paywall' });
