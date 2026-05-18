@@ -667,15 +667,15 @@ export default function VideoEditingPage() {
           <div className={styles.canvas}>
             <div
               style={{
-                maxWidth: 780,
+                maxWidth: 760,
                 margin: '0 auto',
-                padding: '22px 24px',
+                padding: '16px 20px',
                 borderRadius: 14,
                 border: '1px solid rgba(255,255,255,0.08)',
                 background: 'rgba(255,255,255,0.015)',
               }}
             >
-              <div style={{ textAlign: 'center', marginBottom: 14 }}>
+              <div style={{ textAlign: 'center', marginBottom: 10 }}>
                 <div
                   style={{
                     fontFamily: 'var(--font-mono, ui-monospace, monospace)',
@@ -683,7 +683,7 @@ export default function VideoEditingPage() {
                     letterSpacing: '0.22em',
                     textTransform: 'uppercase',
                     color: 'var(--gold, #e0c488)',
-                    marginBottom: 6,
+                    marginBottom: 4,
                   }}
                 >
                   ◆ AI Auto-Editor
@@ -691,26 +691,26 @@ export default function VideoEditingPage() {
                 <h2
                   style={{
                     margin: 0,
-                    fontSize: 'clamp(22px, 3vw, 30px)',
+                    fontSize: 'clamp(20px, 2.6vw, 26px)',
                     lineHeight: 1.15,
                     fontWeight: 700,
                     letterSpacing: '-0.01em',
                     color: '#ededed',
                   }}
                 >
-                  Stop wasting hours editing video.
+                  Your edited video, ready in minutes.
                 </h2>
                 <p
                   style={{
-                    margin: '8px auto 0',
-                    maxWidth: 560,
-                    fontSize: 14,
-                    lineHeight: 1.5,
+                    margin: '6px auto 0',
+                    maxWidth: 540,
+                    fontSize: 13,
+                    lineHeight: 1.45,
                     color: '#b8b6b1',
                   }}
                 >
-                  Drop a raw recording. AI strips the ums, dead silences, and
-                  bad takes — you get a tight, publish-ready cut in minutes.
+                  Upload, pick what to clean up, click once. AI cuts the ums,
+                  dead air, and bad takes — no editing software needed.
                 </p>
               </div>
 
@@ -759,10 +759,10 @@ export default function VideoEditingPage() {
                 onFileSelected={handleFilePicked}
                 onRemove={() => setSourceFile(null)}
                 maxSizeMB={1024}
-                zoneStyle={{ padding: '22px 20px' }}
+                compact
               />
 
-              <div style={{ marginTop: 14 }}>
+              <div style={{ marginTop: 10 }}>
                 <div
                   style={{
                     fontFamily: 'var(--font-mono, ui-monospace, monospace)',
@@ -770,16 +770,16 @@ export default function VideoEditingPage() {
                     letterSpacing: '0.18em',
                     textTransform: 'uppercase',
                     color: '#9b978f',
-                    marginBottom: 8,
+                    marginBottom: 6,
                   }}
                 >
-                  What to do with your video
+                  What to clean up
                 </div>
                 <div
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-                    gap: 8,
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
+                    gap: 6,
                   }}
                 >
                   {FEATURE_LIST.map((f) => (
@@ -795,7 +795,7 @@ export default function VideoEditingPage() {
                 </div>
               </div>
 
-              <div style={{ marginTop: 12 }}>
+              <div style={{ marginTop: 10 }}>
                 <label
                   htmlFor="ve-caption-style"
                   style={{
@@ -805,7 +805,7 @@ export default function VideoEditingPage() {
                     letterSpacing: '0.18em',
                     textTransform: 'uppercase',
                     color: '#9b978f',
-                    marginBottom: 6,
+                    marginBottom: 4,
                   }}
                 >
                   Caption style
@@ -816,14 +816,14 @@ export default function VideoEditingPage() {
                   onChange={(e) => setSubtitleStyle(e.target.value)}
                   style={{
                     width: '100%',
-                    padding: '9px 11px',
+                    padding: '8px 11px',
                     borderRadius: 8,
                     border: '1px solid rgba(255,255,255,0.12)',
                     background: '#0f0f11',
                     color: '#ededed',
                     fontFamily: 'inherit',
                     fontSize: 13,
-                    lineHeight: 1.45,
+                    lineHeight: 1.4,
                     appearance: 'none',
                     cursor: 'pointer',
                     backgroundImage:
@@ -841,7 +841,7 @@ export default function VideoEditingPage() {
                 </select>
               </div>
 
-              <div style={{ marginTop: 12 }}>
+              <div style={{ marginTop: 10 }}>
                 <label
                   htmlFor="ve-edit-description"
                   style={{
@@ -851,28 +851,28 @@ export default function VideoEditingPage() {
                     letterSpacing: '0.18em',
                     textTransform: 'uppercase',
                     color: '#9b978f',
-                    marginBottom: 6,
+                    marginBottom: 4,
                   }}
                 >
                   Anything else? <span style={{ color: '#6b6b6b' }}>(optional)</span>
                 </label>
                 <textarea
                   id="ve-edit-description"
-                  rows={2}
+                  rows={1}
                   value={editDescription}
                   onChange={(e) => setEditDescription(e.target.value.slice(0, 600))}
                   maxLength={600}
-                  placeholder="e.g. Cut to under 5 minutes, keep the punchline at 4:30, intro tight"
+                  placeholder="e.g. Cut to under 5 minutes, keep the punchline at 4:30"
                   style={{
                     width: '100%',
-                    padding: '9px 11px',
+                    padding: '8px 11px',
                     borderRadius: 8,
                     border: '1px solid rgba(255,255,255,0.12)',
                     background: '#0f0f11',
                     color: '#ededed',
                     fontFamily: 'inherit',
                     fontSize: 13,
-                    lineHeight: 1.45,
+                    lineHeight: 1.4,
                     resize: 'vertical',
                   }}
                 />
@@ -883,9 +883,9 @@ export default function VideoEditingPage() {
                 onClick={handleEditMyVideo}
                 disabled={sourceUploading || !sourceFile}
                 style={{
-                  marginTop: 14,
+                  marginTop: 10,
                   width: '100%',
-                  padding: '12px 16px',
+                  padding: '11px 16px',
                   borderRadius: 10,
                   border: 'none',
                   background: !sourceFile ? 'rgba(237,237,237,0.18)' : '#ededed',
