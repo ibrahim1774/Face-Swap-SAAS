@@ -3,6 +3,7 @@ import { put } from '@vercel/blob';
 import { getUserFromRequest, getSupabaseAdmin } from '../../lib/supabaseServer';
 import { stripe } from '../../lib/stripe';
 import { sendCapiEvent } from '../../lib/meta';
+import { screenText, screenImage, ModerationError, moderationErrorResponse } from '../../lib/moderation';
 
 /*
  * Glow-Up generation endpoint.
@@ -172,6 +173,22 @@ export default async function handler(req, res) {
     kiePrompt = extra
       ? `${PROMPTS[body.style]} Additional user direction (incorporate without breaking the CRITICAL identity rules above): ${extra}`
       : PROMPTS[body.style];
+  }
+
+  // Content moderation BEFORE credit gate. Screen the user-supplied
+  // prompt fragment (editPrompt or extraPrompt) and every reference
+  // image they uploaded. screenImage is cached so re-using the same
+  // image across edit iterations short-circuits.
+  try {
+    const userText = mode === 'edit' ? body.editPrompt : body.extraPrompt;
+    if (userText) await screenText(userText);
+    for (const u of imageUrls) {
+      await screenImage(u);
+    }
+  } catch (err) {
+    if (err instanceof ModerationError) return moderationErrorResponse(res, err);
+    console.error('[glow-up] moderation threw', err);
+    return res.status(500).json({ error: 'Moderation check failed.' });
   }
 
   if (!isAdmin && (entitlement.tier === 'none' || !entitlement.activeSub)) {

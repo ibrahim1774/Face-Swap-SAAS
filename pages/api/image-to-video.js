@@ -3,6 +3,7 @@ import { getUserFromRequest } from '../../lib/supabaseServer';
 import { getEntitlement, reserveCredits, refundCredits, trackPendingJob } from '../../lib/entitlement';
 import { sendCapiEvent } from '../../lib/meta';
 import { costForGeneration } from '../../lib/cost';
+import { screenText, screenImage, ModerationError, moderationErrorResponse } from '../../lib/moderation';
 
 function isHttpUrl(value) {
   if (typeof value !== 'string') return false;
@@ -52,6 +53,16 @@ export default async function handler(req, res) {
     resolution: q === 'pro' ? '1080p' : '480p',
     audio: wantAudio,
   });
+
+  // Pre-filter prompt + image before charging credits.
+  try {
+    if (prompt) await screenText(prompt);
+    await screenImage(imageUrl);
+  } catch (err) {
+    if (err instanceof ModerationError) return moderationErrorResponse(res, err);
+    console.error('[image-to-video] moderation threw', err);
+    return res.status(500).json({ error: 'Moderation check failed.' });
+  }
 
   try {
     await reserveCredits(entitlement, cost);
