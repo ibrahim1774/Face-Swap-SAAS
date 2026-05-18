@@ -841,43 +841,6 @@ export default function VideoEditingPage() {
                 </select>
               </div>
 
-              <div style={{ marginTop: 10 }}>
-                <label
-                  htmlFor="ve-edit-description"
-                  style={{
-                    display: 'block',
-                    fontFamily: 'var(--font-mono, ui-monospace, monospace)',
-                    fontSize: 10,
-                    letterSpacing: '0.18em',
-                    textTransform: 'uppercase',
-                    color: '#9b978f',
-                    marginBottom: 4,
-                  }}
-                >
-                  Anything else? <span style={{ color: '#6b6b6b' }}>(optional)</span>
-                </label>
-                <textarea
-                  id="ve-edit-description"
-                  rows={1}
-                  value={editDescription}
-                  onChange={(e) => setEditDescription(e.target.value.slice(0, 600))}
-                  maxLength={600}
-                  placeholder="e.g. Cut to under 5 minutes, keep the punchline at 4:30"
-                  style={{
-                    width: '100%',
-                    padding: '8px 11px',
-                    borderRadius: 8,
-                    border: '1px solid rgba(255,255,255,0.12)',
-                    background: '#0f0f11',
-                    color: '#ededed',
-                    fontFamily: 'inherit',
-                    fontSize: 13,
-                    lineHeight: 1.4,
-                    resize: 'vertical',
-                  }}
-                />
-              </div>
-
               <button
                 type="button"
                 onClick={handleEditMyVideo}
